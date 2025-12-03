@@ -44,7 +44,8 @@ clear
 run_system_setup() {
     log_info "System conf"
     systemctl enable --now ssh
-    read -p "Fully update OS? (y/N) " a; [[ "$a" =~ [yY] ]] && { system_update_repos; remove_bloatware;}
+    read -p "Fully update OS? (y/N) " a
+    [[ "$a" =~ ^[yY]$ ]] && { system_update_repos; remove_bloatware;}
     restore_packages
     systemctl set-default multi-user.target
     apt -y install --reinstall systemd
@@ -75,6 +76,8 @@ run_techuser_setup() {
         answnewuser=${userlist[$CHOICE]}
         setup_service_user $answnewuser
     fi
+    read -p "Fully replace existing sudo config setting it up for $answnewuser? (y/N) " b
+    [[ "$b" =~ ^[yY]$ ]] && setup_sudo_user "$answnewuser"
 }
 
 run_network_setup() {
