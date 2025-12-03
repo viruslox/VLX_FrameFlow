@@ -261,6 +261,9 @@ EOF
 
 enable_network_settings() {
     ## Enable the new settings
+    systemctl disable NetworkManager
+    systemctl mask NetworkManager
+    
     systemctl daemon-reload
     systemctl enable systemd-networkd
     systemctl enable systemd-resolved
