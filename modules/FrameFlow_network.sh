@@ -3,7 +3,7 @@
 configure_network_features() {
     log_info "Install / Update system network packages"
     apt-get update
-    apt-get -y install ufw mptcpd hostapd systemd-timesyncd networkd-dispatcher wpasupplicant
+    apt-get -y install ufw mptcpd hostapd systemd-timesyncd networkd-dispatcher wpasupplicant iproute2
     mkdir -p $NORM_PROFILE $AP_PROFILE $DISPATCHER_DIR
     
     log_info "Enabling MPTCP & Forwarding"
@@ -76,7 +76,7 @@ EOF
 }
 
 create_wifi_profiles() {
-    log_info "Generating Ww-fi network profiles"
+    log_info "Generating Wi-fi network profiles"
     ## create profiles for each wi-fi interface
     INTERFACES=($(iwconfig 2>/dev/null | grep 'IEEE' | awk '{print $1}'))
     local jj=1
@@ -213,6 +213,7 @@ EOF
 
 create_network_profiles() {
     log_info "Generating network profiles"
+    mkdir -p /etc/iproute2
     ## for each ethernet/usb/tether interface create profiles
     local jj=1
     >/etc/iproute2/rt_tables
