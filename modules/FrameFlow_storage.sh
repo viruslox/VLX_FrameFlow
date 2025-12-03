@@ -56,9 +56,21 @@ clone_current_os() {
     log_info "Cloning OS..."
     rsync "${rsync_opts[@]}" / "$mnt/"
 
-    # Fstab generation...
+    # Fstab
+    local p1uuid=$(lsblk -f -n -o UUID "${dev}p1")
+    local p2uuid=$(lsblk -f -n -o UUID "${dev}p2")
+    local p3uuid=$(lsblk -f -n -o UUID "${dev}p3")
     local p4uuid=$(lsblk -f -n -o UUID "${dev}p4")
-    # (Simplified for brevity, ensure UUIDs are correct)
+    local p5uuid=$(lsblk -f -n -o UUID "${dev}p5")
+
+    cat <<EOF > "$mnt/etc/fstab"
+proc /proc proc defaults 0 0
+UUID=$p1uuid /boot/efi vfat defaults 0 2
+UUID=$p2uuid /boot ext4 defaults 0 2
+UUID=$p4uuid / ext4 errors=remount-ro 0 1
+UUID=$p3uuid none swap sw 0 0
+UUID=$p5uuid /home ext4 defaults 0 2
+EOF
 
     umount -R "$mnt"
     log_ok "Done."
