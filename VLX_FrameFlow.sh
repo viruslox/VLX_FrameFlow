@@ -23,13 +23,8 @@ die() {
 }
 
 # --- Checks ---
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        echo "Root privileges required. In case it's not enabled on Your system, try 'sudo passwd root'"
-        die "Please launch again this script as root user."
-    fi
-}
 
+# Checking if the user own the FrameFlow Suite
 get_installed_user() {
     if [ -d "$VLXsuite_DIR" ]; then
         ls -ld "$VLXsuite_DIR" | awk '{print $3}'
@@ -38,7 +33,27 @@ get_installed_user() {
     fi
 }
 
-check_root
+# Root OR (Profile + Sudoers)
+check_permissions() {
+    # If root jump next
+    if [ "$EUID" -eq 0 ]; then
+        return 0
+    fi
+
+    local user_profile="$HOME/.frameflow_profile"
+    local sudoers_file="/etc/sudoers.d/90-$USER"
+    if [ -f "$user_profile" ] && [ -f "$sudoers_file" ]; then
+        # echo "[INFO]: Accepted non-privileged user: $USER"
+        return 0
+    fi
+
+    echo "[ERR]: Requirement: Root privileges OR a fully configured user setup."
+    echo "If You are allowed to, try: 'sudo passwd root' , then login as root"
+    
+    die "Please launch again this script as root."
+}
+
+check_permissions
 clear
 
 run_system_setup() {
