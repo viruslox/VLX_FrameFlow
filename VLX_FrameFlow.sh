@@ -25,7 +25,8 @@ die() {
 # --- Checks ---
 check_root() {
     if [ "$EUID" -ne 0 ]; then
-        die "Root privileges required."
+        echo "Root privileges required. In case it's not enabled on Your system, try 'sudo passwd root'"
+        die "Please launch again this script as root user."
     fi
 }
 
