@@ -76,6 +76,32 @@ EOF
     log_ok "Profile created."
 }
 
+setup_sudo_user() {
+    local user="${1:-frameflow}"
+    local sudo_file="/etc/sudoers.d/90-$user"
+
+    log_info "Purging existing sudoers"
+    rm -fv /etc/sudoers.d/* 2>/dev/null
+    
+    log_info "Setting up sudoers for user: $user"
+    cat <<EOF > "$sudo_file"
+$user ALL=(ALL) NOPASSWD: $VLXsuite_DIR/VLX_FrameFlow.sh
+$user ALL=(ALL) NOPASSWD: $VLXsuite_DIR/VLX_netflow.sh
+
+$user ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart systemd-networkd
+$user ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart systemd-resolved
+$user ALL=(ALL) NOPASSWD: /usr/bin/systemctl start hostapd
+$user ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop hostapd
+EOF
+
+    chmod 0440 "$sudo_file"
+    if command -v visudo >/dev/null; then
+        visudo -c -f "$sudo_file" || log_warn "Sudoers syntax check failed!"
+    fi
+
+    log_ok "Sudoers updated."
+}
+
 setup_service_user() {
     local user="${1:-frameflow}"
     log_info "Setting up user: $user"
