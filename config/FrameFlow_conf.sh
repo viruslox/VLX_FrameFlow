@@ -62,29 +62,3 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
-
-# --- Logging ---
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_ok()   { echo -e "${GREEN}[OK]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_err()  { echo -e "${RED}[ERR]${NC} $1" >&2; }
-
-die() {
-    log_err "$1"
-    exit 1
-}
-
-# --- Checks ---
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        die "Root privileges required."
-    fi
-}
-
-get_installed_user() {
-    if [ -d "$VLXsuite_DIR" ]; then
-        ls -ld "$VLXsuite_DIR" | awk '{print $3}'
-    else
-        echo "root"
-    fi
-}
