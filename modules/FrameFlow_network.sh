@@ -4,6 +4,8 @@ configure_network_features() {
     log_info "Install / Update system network packages"
     apt-get update
     apt-get -y install ufw mptcpd hostapd systemd-timesyncd networkd-dispatcher wpasupplicant
+    mkdir -p $NORM_PROFILE $AP_PROFILE $DISPATCHER_DIR
+    
     log_info "Enabling MPTCP & Forwarding"
     if ! sysctl net.mptcp.enabled &> /dev/null; then
         log_err "Kernel lacks MPTCP support."
