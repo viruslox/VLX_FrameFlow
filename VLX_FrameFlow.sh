@@ -11,6 +11,32 @@ source "$BASE_DIR/modules/FrameFlow_packages.sh"
 source "$BASE_DIR/modules/FrameFlow_network.sh"
 source "$BASE_DIR/modules/FrameFlow_storage.sh"
 
+# --- Logging ---
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_ok()   { echo -e "${GREEN}[OK]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_err()  { echo -e "${RED}[ERR]${NC} $1" >&2; }
+
+die() {
+    log_err "$1"
+    exit 1
+}
+
+# --- Checks ---
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        die "Root privileges required."
+    fi
+}
+
+get_installed_user() {
+    if [ -d "$VLXsuite_DIR" ]; then
+        ls -ld "$VLXsuite_DIR" | awk '{print $3}'
+    else
+        echo "root"
+    fi
+}
+
 check_root
 clear
 
