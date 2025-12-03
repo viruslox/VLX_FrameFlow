@@ -1,6 +1,4 @@
-#!/bin/bash
-
-echo "VLX FrameFlow - nvme / SSD / eMMc setup"
+## "VLX FrameFlow - nvme / SSD / eMMc setup"
 
 list_storage_devices() {
     # Exclude the device mounting / (root) to prevent self-cloning issues
