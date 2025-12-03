@@ -4,6 +4,7 @@ remove_bloatware() {
     log_info "Removing packages that might interfere with FrameFlow"
     apt-get purge -y "${PKGS_TO_REMOVE[@]}"
     apt-get autoremove -y
+    aptitude -y purge '~c'
     log_ok "Cleaned."
 }
 
