@@ -145,9 +145,6 @@ UUID=$p5uuid /home ext4 defaults 0 2
 UUID=$p3uuid none swap sw 0 0
 EOF
 
-    # 5. Disable sudo for security/cleanup (from old script)
-    rm -fv "$mnt/etc/sudoers.d/"* 2>/dev/null
-
     cd /
     sync
     umount -R "$mnt"
