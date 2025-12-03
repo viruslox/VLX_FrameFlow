@@ -74,7 +74,7 @@ create_wifi_profiles() {
     log_info "Generating Ww-fi network profiles"
     ## create profiles for each wi-fi interface
     INTERFACES=($(iwconfig 2>/dev/null | grep 'IEEE' | awk '{print $1}'))
-
+    local jj=1
     if [ ${#INTERFACES[@]} -eq 0 ]; then
         echo "[WARN] No wireless network interface found. Skipping Wi-Fi configuration."
     else
@@ -180,6 +180,7 @@ wpa_pairwise=CCMP
 rsn_pairwise=CCMP
 EOF
             fi
+            ((jj++))
         done
     fi
 
@@ -208,7 +209,7 @@ EOF
 create_network_profiles() {
     log_info "Generating network profiles"
     ## for each ethernet/usb/tether interface create profiles
-    jj=1
+    local jj=1
     >/etc/iproute2/rt_tables
     for iface in $(ls /sys/class/net); do
         if [ "$iface" == "lo" ] || [[ "$iface" == *bond* ]] || [ -d "/sys/class/net/$iface/wireless" ]; then
