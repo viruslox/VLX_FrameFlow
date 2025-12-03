@@ -37,7 +37,7 @@ update_suite_code() {
         chown -R "$user:$user" "$VLXsuite_DIR"
         sudo -u "$user" git clone "$GITHUB_URL" "$VLXsuite_DIR"
     fi
-    chmod 700 "$VLXsuite_DIR"/*.sh "$VLXsuite_DIR"/common/*.sh
+    chmod 700 "$VLXsuite_DIR"/*.sh "$VLXsuite_DIR"/config/FrameFlow_maintenance.sh
     log_ok "Code updated."
 }
 
