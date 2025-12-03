@@ -76,7 +76,7 @@ read -p "Select: " OPT
 case "$OPT" in
     1) run_storage_installation_wizard ;;
     2) run_system_setup ; run_techuser_setup; run_network_setup ;run_application_setup ;;
-    3) generate_network_profiles ;;
+    3) create_wifi_profiles; create_network_profiles ;;
     4) run_techuser_setup ;;
     5) exit 0 ;;
     *) echo "Invalid"; exit 1 ;;
