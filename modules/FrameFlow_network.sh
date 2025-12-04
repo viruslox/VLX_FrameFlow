@@ -267,7 +267,7 @@ EOF
 
 enable_network_settings() {
     ## Enable the new settings
-    systemctl disable NetworkManager
+    systemctl disable NetworkManager 2>/dev/null
     systemctl mask NetworkManager
     
     systemctl daemon-reload
