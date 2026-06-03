@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:testing
+
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y git golang-go nodejs npm
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Mark checkout directory as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Run build script
+        run: ./build.sh
+
+      - name: Run tests
+        run: go test ./...
