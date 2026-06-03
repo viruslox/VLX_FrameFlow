@@ -7,7 +7,3 @@ frontend_app/node_modules/
 frontend_app/dist/
 build/
 internal/ui/dist/
-build/
-frontend_app/node_modules/
-frontend_app/dist/
-internal/ui/dist/
