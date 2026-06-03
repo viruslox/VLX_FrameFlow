@@ -1,0 +1,13 @@
+# VLX FrameFlow Server Profile
+FRAMEFLOW_USER="frameflow"
+VLXsuite_DIR="/opt/VLX_FrameFlow"
+MEDIAMTX_DIR="/opt/mediamtx"
+
+# Network settings
+FRAMEFLOW_ROLE="SERVER"
+MLVPN_VPS_IP=""
+MPTCP_PROXY_PASS=""
+MLVPN_KEY=""
+
+# Local Server API Relay Port
+bind_port="9090"
