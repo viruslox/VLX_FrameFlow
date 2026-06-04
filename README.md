@@ -101,6 +101,24 @@ Running the application without arguments provides an interactive menu. The prim
 
 All runtime modules are intended to be executed by the **dedicated service user** (default: `frameflow`). They rely on `systemd-run --user` for lifecycle and process management.
 
+### API Command Relay
+
+The **Server** acts as a transparent reverse proxy, relaying local API requests to the remote **Client** (SBC) over the secure MLVPN tunnel (`10.1.10.x`). This enables companion applications (e.g., a Twitch ChatBridge) running on the Server to control the Client securely.
+
+**Flow:**
+*   `Twitch Chat` -> `ChatBridge Webhook` -> `FrameFlow Server Relay (127.0.0.1)` -> `MLVPN Tunnel` -> `FrameFlow Client API (10.1.10.2)`
+
+**Example:**
+Send an HTTP POST to the local Server to start the Client's cameraman:
+```bash
+curl -X POST http://127.0.0.1:9090/api/v1/relay/cameraman/start \
+  -H "Content-Type: application/json" \
+  -d '{"device": "V0A1"}'
+```
+The Server seamlessly forwards this request (headers and body) through the MLVPN tunnel, where the Client natively executes the command and returns the JSON response back to your local application.
+
+---
+
 ### Network Flow Control
 
 These commands can be run via the main CLI to switch modes and control networking.
