@@ -9,5 +9,10 @@ MLVPN_VPS_IP=""
 MPTCP_PROXY_PASS=""
 MLVPN_KEY=""
 
-# Local Server API Relay Port
+# Server API Relay Configuration
+# This API acts as an internal transparent reverse proxy to relay local webhook
+# commands directly to the backpack Client over the secure MLVPN tunnel.
+# IMPORTANT: The Server API should STRICTLY bind to 127.0.0.1 for security.
+# It is designed to be accessed locally by companion applications (e.g. ChatBridge).
+bind_address="127.0.0.1"
 bind_port="9090"
