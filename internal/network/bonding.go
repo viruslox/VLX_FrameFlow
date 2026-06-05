@@ -106,8 +106,6 @@ WantedBy=multi-user.target
 		return fmt.Errorf("failed to write mlvpn service: %w", err)
 	}
 
-	sysutils.RunCommand(10*time.Second, "systemctl", "--user", "daemon-reload")
-
 	return nil
 }
 
@@ -255,7 +253,7 @@ Restart=always
 WantedBy=multi-user.target
 `
 	} else {
-		serviceFile = "/etc/systemd/user/frameflow-mptcp-proxy.service"
+		serviceFile = "/etc/systemd/system/frameflow-mptcp-proxy.service"
 		jsonContent = fmt.Sprintf(`{
     "server":"::",
     "server_port":8388,
@@ -285,11 +283,17 @@ WantedBy=multi-user.target
 
 	sysutils.RunCommand(10*time.Second, "systemctl", "disable", "--now", "shadowsocks-libev.service")
 
-	targetUser, _ := sysutils.GetInstalledUser()
-	if targetUser == "" || targetUser == "root" {
-		targetUser = "nobody"
+	if role == "SERVER" {
+		sysutils.RunCommand(10*time.Second, "systemctl", "daemon-reload")
+		sysutils.RunCommand(10*time.Second, "systemctl", "enable", "frameflow-mptcp-proxy.service")
+	} else {
+		targetUser, _ := sysutils.GetInstalledUser()
+		if targetUser == "" || targetUser == "root" {
+			targetUser = "nobody"
+		}
+		sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user daemon-reload")
+		sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user enable frameflow-mptcp-proxy.service")
 	}
-	sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user daemon-reload")
 
 	sysutils.Success("MPTCP Proxy configured.")
 	return nil
@@ -410,10 +414,21 @@ exit 0
 
 	sysutils.RunCommand(10*time.Second, "chown", fmt.Sprintf("%s:root", targetUser), configDir, configFile, updownScript)
 
-	serviceFile := "/etc/systemd/user/frameflow-mlvpn.service"
+	var serviceFile string
+	if role == "SERVER" {
+		serviceFile = "/etc/systemd/system/frameflow-mlvpn.service"
+	} else {
+		serviceFile = "/etc/systemd/user/frameflow-mlvpn.service"
+	}
 	GenerateMlvpnService(serviceFile, mlvpnBin, targetUser, configFile, role)
 
-	sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user daemon-reload")
+	if role == "SERVER" {
+		sysutils.RunCommand(10*time.Second, "systemctl", "daemon-reload")
+		sysutils.RunCommand(10*time.Second, "systemctl", "enable", "frameflow-mlvpn.service")
+	} else {
+		sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user daemon-reload")
+		sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user enable frameflow-mlvpn.service")
+	}
 
 	if role == "CLIENT" {
 		if u, err := user.Lookup(targetUser); err == nil && u.Gid != "" {
