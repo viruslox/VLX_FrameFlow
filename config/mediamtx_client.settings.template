@@ -25,11 +25,11 @@ authInternalUsers:
       - '10.1.10.0/24'
     permissions:
       - action: publish
-        path: ~^cam
+        path: ~^wcam
       - action: read
-        path: ~^cam
+        path: ~^wcam
       - action: playback
-        path: ~^cam
+        path: ~^wcam
 
 api: no
 metrics: no
