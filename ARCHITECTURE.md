@@ -35,12 +35,16 @@ The project has been refactored from a monolithic bash structure into a compiled
 2. **`VLX_FrameFlow_SRV` (The Server):** Exclusively deployed on a Virtual Private Server (VPS). Lightweight, focusing strictly on relaying traffic, receiving bonded connections, and enforcing UFW firewall rules.
 3. **`vlx_frontend` (The UI):** A standalone web server encapsulating a pre-built Svelte SPA (`//go:embed`). Designed to run remotely on an operator's machine or in the cloud to manage the Field Unit via secure APIs.
 
+## Unified Configuration Paradigm
+
+All Go daemons (`bonding.go`, `mediamtx.go`, etc.) across the suite expect a standardized configuration filename. To prevent logic fragmentation between the Client and Server roles, the `install.go` logic safely maps divergent templates (`frameflow.settings.template` and `frameflow_srv.settings.template`) into a single universally named `/opt/VLX_FrameFlow/etc/frameflow.settings` file during installation.
+
 ## Network Bonding Architecture
 
 Ensuring uninterrupted, high-bandwidth streaming from the field requires resilient network bonding. The suite achieves this through a dual-protocol aggregation strategy:
 
 *   **UDP Traffic (Streaming):** Handled exclusively by **MLVPN**. MLVPN creates multiple concurrent tunnels over available physical interfaces (e.g., Ethernet + multiple Cellular Modems) to aggregate bandwidth for the UDP-based SRT video streams.
-*   **TCP Traffic (Telemetry/API):** Handled by **MPTCP** (MultiPath TCP) acting alongside `shadowsocks-libev` and `v2ray-plugin`. This ensures API calls and telemetry data transparently utilize multiple paths without requiring application-level awareness.
+*   **TCP Traffic (Telemetry/API - Native Dual-Stack TCP Bonding):** Handled by **MPTCP** (MultiPath TCP) acting alongside `shadowsocks-libev` and `v2ray-plugin`. The Go parser dynamically converts comma-separated IPs into a JSON array for `shadowsocks-libev`. This allows mobile backpacks (which often favor IPv6 carrier routing) to establish concurrent IPv4 and IPv6 tunnels to the Server simultaneously, empowering the MPTCP kernel module to dynamically balance packets over the lowest-latency path.
 
 ### Seamless Fallback Pipeline (Zero-Drop)
 

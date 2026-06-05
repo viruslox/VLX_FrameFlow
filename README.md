@@ -54,7 +54,7 @@ cd vlx_frameflow
 
 ### Step 2: System Configuration (As Root)
 
-Execute the specific role binary as root to begin system configuration:
+Execute the specific role binary as root to begin system configuration. Regardless of whether you install the Client or Server role, the generated target configuration file in `/opt/VLX_FrameFlow/etc/` is universally named `frameflow.settings`.
 
 **For SBC / Field Unit (Client):**
 ```bash
@@ -200,8 +200,13 @@ This file contains **all runtime environment variables**. It is generated during
 
 | Variable | Description |
 | :--- | :--- |
-| `MLVPN_VPS_IP` | The remote server IP for MLVPN and Shadowsocks bonding. |
+| `MLVPN_SERVER_IP` | The remote server IP for MLVPN (UDP traffic). |
+| `SHADOWSOCKS_SERVER_IPS` | The remote server IP(s) for Shadowsocks bonding (TCP proxy traffic). |
 | `AP_PASSWORD` | WPA2 passphrase for the generated Access Point. Automatically generated if left empty. |
+
+**Note on Dual-Stack Bonding:** `SHADOWSOCKS_SERVER_IPS` natively supports Dual-Stack environments. You can provide comma-separated values (e.g., `"34.65.xx.xx, 2001:db8::1"`) to establish concurrent IPv4 and IPv6 tunnels simultaneously.
+
+**Note on Server Configuration:** The Server role configuration (`frameflow_srv.settings.template`) intentionally omits these IP variables. The Server is a destination node that securely binds to `0.0.0.0` and `::` locally, and therefore only requires the corresponding authentication keys (`MLVPN_KEY`, `MPTCP_PROXY_PASS`).
 
 ### Streaming Endpoints
 
