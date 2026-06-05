@@ -14,10 +14,12 @@ authInternalUsers:
     ips:
       - '127.0.0.1'
       - '::1'
-      - '10.1.10.0/24' # Allow ingestion from MLVPN clients (Backpack/Cameraman)
+      - '10.1.10.0/24' # Allow ingestion from MLVPN clients
     permissions:
       - action: publish
-        path: any
+        path: offline
+      - action: publish
+        path: ~^wcam_.*
       - action: read
         path: any
 # 2. Protocols Enablement
@@ -42,8 +44,9 @@ paths:
     runOnInit: ffmpeg -re -stream_loop -1 -i /opt/VLX_FrameFlow/assets/offline.mp4 -c copy -f rtsp rtsp://localhost:8554/offline
     runOnInitRestart: yes
 
-  # The main ingestion path for the backpack
-  zainetto:
+#  ~^cam_.*:
+#    fallback: /offline
+  cam_01:
     fallback: /offline
 
   # Secondary ingestion path for the cameraman (smartphone or second backpack)
