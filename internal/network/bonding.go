@@ -12,7 +12,7 @@ import (
 )
 
 // GenerateMlvpnConfig creates the MLVPN configuration file based on the role.
-func GenerateMlvpnConfig(configFile, updownScript, mlvpnKey, role, mlvpnVPSIP string) error {
+func GenerateMlvpnConfig(configFile, updownScript, mlvpnKey, role, mlvpnServerIP string) error {
 	var content string
 
 	if role == "CLIENT" {
@@ -31,7 +31,7 @@ password = "%s"
 bindhost = "0.0.0.0"
 remotehost = "%s"
 remoteport = 5080
-`, updownScript, mlvpnKey, mlvpnVPSIP)
+`, updownScript, mlvpnKey, mlvpnServerIP)
 	} else {
 		content = fmt.Sprintf(`[general]
 statuscommand = "%s"
@@ -209,12 +209,31 @@ func SetupMptcpProxy() error {
 
 	if role == "CLIENT" {
 		serviceFile = "/etc/systemd/user/frameflow-mptcp-proxy.service"
-		vpsIP := GetProfileVar(settingsFile, "MLVPN_VPS_IP")
-		if vpsIP == "" {
-			vpsIP = "127.0.0.1" // fallback
+
+		ssIPs := GetProfileVar(settingsFile, "SHADOWSOCKS_SERVER_IPS")
+		if ssIPs == "" {
+			ssIPs = GetProfileVar(settingsFile, "MLVPN_SERVER_IP")
 		}
+		if ssIPs == "" {
+			ssIPs = "127.0.0.1"
+		}
+
+		// Dynamically format as JSON string or JSON array
+		var serverJson string
+		if strings.Contains(ssIPs, ",") {
+			parts := strings.Split(ssIPs, ",")
+			var quoted []string
+			for _, p := range parts {
+				quoted = append(quoted, fmt.Sprintf(`"%s"`, strings.TrimSpace(p)))
+			}
+			serverJson = fmt.Sprintf("[%s]", strings.Join(quoted, ", "))
+		} else {
+			serverJson = fmt.Sprintf(`"%s"`, strings.TrimSpace(ssIPs))
+		}
+
+		// Inject serverJson without surrounding quotes in the format string
 		jsonContent = fmt.Sprintf(`{
-    "server":"%s",
+    "server":%s,
     "server_port":8388,
     "local_address":"::",
     "local_port":1080,
@@ -223,7 +242,7 @@ func SetupMptcpProxy() error {
     "method":"aes-256-gcm",
     "plugin":"v2ray-plugin",
     "plugin_opts":"mux=8"
-}`, vpsIP, proxyPass)
+}`, serverJson, proxyPass)
 
 		serviceContent = `[Unit]
 Description=VLX FrameFlow MPTCP Proxy Client
@@ -266,10 +285,10 @@ WantedBy=multi-user.target
 
 	sysutils.RunCommand(10*time.Second, "systemctl", "disable", "--now", "shadowsocks-libev.service")
 
-    targetUser, _ := sysutils.GetInstalledUser()
-    if targetUser == "" || targetUser == "root" {
-        targetUser = "nobody"
-    }
+	targetUser, _ := sysutils.GetInstalledUser()
+	if targetUser == "" || targetUser == "root" {
+		targetUser = "nobody"
+	}
 	sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user daemon-reload")
 
 	sysutils.Success("MPTCP Proxy configured.")
@@ -301,7 +320,7 @@ func SetupMlvpnBonding() error {
 	updownScript := filepath.Join(configDir, "mlvpn_updown.sh")
 
 	role := os.Getenv("FRAMEFLOW_ROLE")
-	vpsIP := GetProfileVar(settingsFile, "MLVPN_VPS_IP")
+	vpsIP := GetProfileVar(settingsFile, "MLVPN_SERVER_IP")
 	if vpsIP == "" {
 		vpsIP = "127.0.0.1" // fallback
 	}

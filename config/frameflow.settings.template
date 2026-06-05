@@ -11,7 +11,8 @@ gps_target_url=""
 
 # Network settings
 FRAMEFLOW_ROLE=""
-MLVPN_VPS_IP=""
+MLVPN_SERVER_IP=""
+SHADOWSOCKS_SERVER_IPS=""
 MPTCP_PROXY_PASS=""
 MLVPN_KEY=""
 
