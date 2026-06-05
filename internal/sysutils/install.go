@@ -229,17 +229,20 @@ func InstallBinary(isServer bool) error {
 				}
 			}
 
-			if !isServer {
-				// Copy mediamtx.settings.template to etc/mediamtx.settings if it exists
-				mtxConfig := filepath.Join(searchPath, "mediamtx.settings.template")
-				mtxTarget := filepath.Join(installConfigDir, "mediamtx.settings")
-				if _, err := os.Stat(mtxConfig); err == nil {
-					if _, err := os.Stat(mtxTarget); os.IsNotExist(err) {
-						copyFile(mtxConfig, mtxTarget, 0644)
-						Info("Copied mediamtx.settings.template to etc/mediamtx.settings")
-					} else {
-						mergeConfigs(mtxConfig, mtxTarget)
-					}
+			// Copy mediamtx settings template to etc/mediamtx.settings if it exists
+			var mtxConfig string
+			if isServer {
+				mtxConfig = filepath.Join(searchPath, "mediamtx_server.settings.template")
+			} else {
+				mtxConfig = filepath.Join(searchPath, "mediamtx_client.settings.template")
+			}
+			mtxTarget := filepath.Join(installConfigDir, "mediamtx.settings")
+			if _, err := os.Stat(mtxConfig); err == nil {
+				if _, err := os.Stat(mtxTarget); os.IsNotExist(err) {
+					copyFile(mtxConfig, mtxTarget, 0644)
+					Info("Copied %s to etc/mediamtx.settings", filepath.Base(mtxConfig))
+				} else {
+					mergeConfigs(mtxConfig, mtxTarget)
 				}
 			}
 			break
