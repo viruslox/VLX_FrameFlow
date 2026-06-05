@@ -42,6 +42,10 @@ Ensuring uninterrupted, high-bandwidth streaming from the field requires resilie
 *   **UDP Traffic (Streaming):** Handled exclusively by **MLVPN**. MLVPN creates multiple concurrent tunnels over available physical interfaces (e.g., Ethernet + multiple Cellular Modems) to aggregate bandwidth for the UDP-based SRT video streams.
 *   **TCP Traffic (Telemetry/API):** Handled by **MPTCP** (MultiPath TCP) acting alongside `shadowsocks-libev` and `v2ray-plugin`. This ensures API calls and telemetry data transparently utilize multiple paths without requiring application-level awareness.
 
+### Seamless Fallback Pipeline (Zero-Drop)
+
+The Server's MediaMTX instance maintains a continuous background loop (`/offline`) using `ffmpeg -stream_loop`. When the Client backpack loses 4G connectivity, MediaMTX natively switches the `/zainetto` path to the `/offline` fallback without terminating the TCP/UDP connection to downstream consumers (like VisionBridge or OBS). This prevents stream buffering or crashing on the final Twitch output.
+
 ## Security & Execution Flow
 
 ### Zero-Trust mTLS

@@ -163,9 +163,8 @@ Manages the local **MediaMTX** server (SRT protocol only). Combining this servic
 
 **Functions:**
 
-- Acts as a relay/proxy for local streams.
-- Restreams to remote endpoints via SRT.
-- Dynamically injects FFmpeg commands into `mediamtx.settings`.
+- **Client Role:** Configured as a lightweight "Push" node. Automatically pushes local camera streams over the MLVPN tunnel (`10.1.10.x`) directly to the Server.
+- **Server Role:** Configured as a "Smart Receiver" with WebRTC enabled for Director's Monitoring.
 
 ### GPS Tracker
 
