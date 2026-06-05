@@ -65,15 +65,14 @@ var gpsCmd = &cobra.Command{
 
 		case "sender":
 			// Hidden command used by the background service to run the sender
-			apiURL := os.Getenv("API_URL")
-			authToken := os.Getenv("AUTH_TOKEN")
+			targetURL := os.Getenv("gps_target_url")
 
-			if apiURL == "" {
-				fmt.Println("Error: API_URL environment variable is not set")
+			if targetURL == "" {
+				fmt.Println("Error: gps_target_url environment variable is not set")
 				os.Exit(1)
 			}
 
-			err := gps.RunSender(context.Background(), gpsPort, apiURL, authToken)
+			err := gps.RunSender(context.Background(), gpsPort, targetURL)
 			if err != nil {
 				fmt.Printf("Error running GPS sender: %v\n", err)
 				os.Exit(1)

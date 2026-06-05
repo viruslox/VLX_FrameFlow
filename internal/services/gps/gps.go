@@ -131,7 +131,7 @@ type Payload struct {
 	Speed    float64 `json:"speed"`
 }
 
-func RunSender(ctx context.Context, gpsPort, apiURL, authToken string) error {
+func RunSender(ctx context.Context, gpsPort, targetURL string) error {
 	sysutils.Info("Starting native Go GPS API Sender...")
 
 	address := "localhost:" + gpsPort
@@ -200,29 +200,27 @@ func RunSender(ctx context.Context, gpsPort, apiURL, authToken string) error {
 			continue
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
+		req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewBuffer(jsonData))
 		if err != nil {
 			sysutils.Warning("Failed to create HTTP request: %v", err)
 			continue
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+authToken)
 
-		resp, err := client.Do(req)
-		if err != nil {
-			sysutils.Warning("Failed to send GPS data: %v", err)
-			// don't abort, just sleep and continue
-			time.Sleep(5 * time.Second)
-			continue
-		}
+		// Fire and forget POST request
+		go func(r *http.Request) {
+			resp, err := client.Do(r)
+			if err != nil {
+				sysutils.Warning("Failed to send GPS data: %v", err)
+				return
+			}
+			defer resp.Body.Close()
 
-		// Drain and close body
-		resp.Body.Close()
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			sysutils.Warning("API returned non-200 status code: %d", resp.StatusCode)
-		}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				sysutils.Warning("API returned non-200 status code: %d", resp.StatusCode)
+			}
+		}(req)
 
 		// sleep for 5 seconds matching bash script behavior
 		select {
