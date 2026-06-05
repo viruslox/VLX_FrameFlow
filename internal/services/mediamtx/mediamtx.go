@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -187,7 +186,6 @@ func Start() error {
 		vlxSuiteDir = "/opt/VLX_FrameFlow"
 	}
 	templateFile := filepath.Join(vlxSuiteDir, "etc", "mediamtx.settings")
-	runtimeFile := filepath.Join(vlxSuiteDir, "etc", "mediamtx.yml")
 
 	// Check if active
 	output, _ := runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "is-active", "--quiet", unitName)
@@ -207,89 +205,15 @@ func Start() error {
 		return fmt.Errorf("template file not found")
 	}
 
-	targetUrl := ""
-	ffmpegFormat := "mpegts"
-
-	srtUrl := os.Getenv("SRT_URL")
-	if srtUrl == "" {
-		fmt.Println("[ERR] SRT_URL not set in profile.")
-		return fmt.Errorf("SRT_URL not set")
-	}
-
-	tempSrtUrl := srtUrl
-	role := os.Getenv("FRAMEFLOW_ROLE")
-	if strings.ToUpper(role) == "CLIENT" {
-		_, errProxy := runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "is-active", "--quiet", "frameflow-mptcp-proxy.service")
-		_, errMlvpn := runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "is-active", "--quiet", "frameflow-mlvpn.service")
-
-		if errProxy == nil && errMlvpn == nil {
-			fmt.Println("[INFO] Waiting for MLVPN tunnel to be up...")
-			pingSuccess := false
-			for i := 0; i < 15; i++ {
-				_, err := runCommandWithEnv(2*time.Second, nil, "ping", "-c", "1", "-W", "1", "10.1.10.1")
-				if err == nil {
-					pingSuccess = true
-					break
-				}
-				time.Sleep(1 * time.Second)
-			}
-
-			if pingSuccess {
-				// Replace hostname/IP with 10.1.10.1 using native regex
-				re := regexp.MustCompile(`srt://[^/:]+`)
-				tempSrtUrl = re.ReplaceAllString(tempSrtUrl, "srt://10.1.10.1")
-			} else {
-				fmt.Println("[WARN] Ping to 10.1.10.1 failed after 15 attempts, proceeding with original SRT URL.")
-			}
-		}
-	}
-
-	if strings.Contains(tempSrtUrl, "publish:") {
-		idx := strings.Index(tempSrtUrl, "publish:")
-		prefix := tempSrtUrl[:idx+len("publish:")]
-		content := tempSrtUrl[idx+len("publish:"):]
-
-		if strings.Contains(content, ":") {
-			parts := strings.SplitN(content, ":", 2)
-			streamName := parts[0]
-			authData := parts[1]
-			targetUrl = fmt.Sprintf("%s%s_mtx:%s", prefix, streamName, authData)
-		} else {
-			targetUrl = fmt.Sprintf("%s_mtx", tempSrtUrl)
-		}
-	} else {
-		targetUrl = fmt.Sprintf("%s_mtx", tempSrtUrl)
-	}
-
-	fmt.Println("[INFO] Configuring MediaMTX for SRT...")
-	fmt.Printf("[INFO] Relay Target: %s\n", targetUrl)
-
-	// Copy template to runtime file
-	input, err := os.ReadFile(templateFile)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(runtimeFile, input, 0644)
-	if err != nil {
-		return err
-	}
-
-	cmdFfmpeg := fmt.Sprintf("ffmpeg -i rtmp://localhost:1935/\\$MTX_PATH -c copy -f %s \"%s\"", ffmpegFormat, targetUrl)
-	sedCmd := fmt.Sprintf("sed -i \"s|#\\s*runOnReady: ffmpeg.*|runOnReady: %s|g\" \"%s\"", cmdFfmpeg, runtimeFile)
-	_, err = runCommandWithEnv(10*time.Second, nil, "bash", "-c", sedCmd)
-	if err != nil {
-		return err
-	}
-
 	fmt.Println("[INFO] Starting MediaMTX via Systemd...")
-	_, err = runCommandWithEnv(30*time.Second, nil, "systemd-run", "--user",
+	_, err := runCommandWithEnv(30*time.Second, nil, "systemd-run", "--user",
 		"--unit="+unitName,
 		"--description=VLX FrameFlow MediaMTX Server",
 		"--collect",
 		"--property=Restart=on-failure",
 		"--property=RestartSec=5",
 		"--service-type=exec",
-		filepath.Join(mediaMtxDir, "mediamtx"), runtimeFile)
+		filepath.Join(mediaMtxDir, "mediamtx"), templateFile)
 
 	if err != nil {
 		fmt.Println("[ERR] Failed to start MediaMTX.")
@@ -321,13 +245,6 @@ func Stop() error {
 		return err
 	}
 
-	vlxSuiteDir := os.Getenv("VLXsuite_DIR")
-	if vlxSuiteDir == "" {
-		vlxSuiteDir = "/opt/VLX_FrameFlow"
-	}
-	runtimeFile := filepath.Join(vlxSuiteDir, "etc", "mediamtx.yml")
-	os.Remove(runtimeFile)
-
 	fmt.Println("Stopped.")
 	return nil
 }
@@ -342,12 +259,6 @@ func Status() error {
 		// Not active or crashed
 		runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "stop", unitName)
 		runCommandWithEnv(10*time.Second, nil, "pkill", "-u", os.Getenv("USER"), "mediamtx")
-		vlxSuiteDir := os.Getenv("VLXsuite_DIR")
-		if vlxSuiteDir == "" {
-			vlxSuiteDir = "/opt/VLX_FrameFlow"
-		}
-		runtimeFile := filepath.Join(vlxSuiteDir, "etc", "mediamtx.yml")
-		os.Remove(runtimeFile)
 	}
 
 	out, err := runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "status", unitName, "--no-pager")
