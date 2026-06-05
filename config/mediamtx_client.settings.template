@@ -25,11 +25,11 @@ authInternalUsers:
       - '10.1.10.0/24'
     permissions:
       - action: publish
-        path: cam
+        path: ~^cam
       - action: read
-        path: cam
+        path: ~^cam
       - action: playback
-        path: cam
+        path: ~^cam
 
 api: no
 metrics: no
@@ -76,6 +76,6 @@ pathDefaults:
   runOnRecordSegmentComplete:
 
 paths:
-  cam:
-    runOnReady: ffmpeg -i rtsp://localhost:8554/cam -c copy -f srt "srt://10.1.10.1:8890?streamid=publish:zainetto"
+  ~^wcam_.*:
+    runOnReady: ffmpeg -i rtmp://localhost:$RTMP_PORT/$MTX_PATH -c copy -f srt "srt://10.1.10.1:8890?streamid=publish:$MTX_PATH"
     runOnReadyRestart: yes
