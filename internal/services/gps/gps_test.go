@@ -217,12 +217,13 @@ func TestStatusGPSD(t *testing.T) {
 func TestRunSender(t *testing.T) {
 	// Start Mock API Server
 	var receivedPayload Payload
-	var authToken string
+	reqDone := make(chan struct{})
+
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authToken = r.Header.Get("Authorization")
 		body, _ := io.ReadAll(r.Body)
 		json.Unmarshal(body, &receivedPayload)
 		w.WriteHeader(http.StatusOK)
+		close(reqDone)
 	}))
 	defer apiServer.Close()
 
@@ -257,18 +258,20 @@ func TestRunSender(t *testing.T) {
 	// Run sender in a goroutine
 	done := make(chan error)
 	go func() {
-		err := RunSender(ctx, port, apiServer.URL, "secret-token")
+		err := RunSender(ctx, port, apiServer.URL)
 		done <- err
 	}()
 
-	// Wait a moment for data to be sent
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the HTTP request to hit the API server
+	select {
+	case <-reqDone:
+		// Success
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timeout waiting for HTTP POST request")
+	}
+
 	cancel() // stop the sender
 	<-done
-
-	if authToken != "Bearer secret-token" {
-		t.Errorf("expected token 'Bearer secret-token', got '%s'", authToken)
-	}
 
 	if receivedPayload.Lat != 37.7749 || receivedPayload.Lon != -122.4194 {
 		t.Errorf("payload not received correctly, got: %+v", receivedPayload)
