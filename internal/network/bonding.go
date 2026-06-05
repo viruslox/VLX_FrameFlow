@@ -436,6 +436,11 @@ exit 0
 			os.WriteFile(confPath, []byte(fmt.Sprintf("net.ipv4.ping_group_range = %s %s\n", u.Gid, u.Gid)), 0644)
 			sysutils.RunCommand(10*time.Second, "sysctl", "-p", confPath)
 		}
+
+		// Ultimate fallback for non-root ping capabilities
+		sysutils.RunCommand(10*time.Second, "setcap", "cap_net_raw+p", "/bin/ping")
+		sysutils.RunCommand(10*time.Second, "setcap", "cap_net_raw+p", "/usr/bin/ping")
+
 		sysutils.Success("MLVPN Bonding (Client) configured.")
 	} else {
 		sysutils.Success("MLVPN Bonding (Server) configured.")

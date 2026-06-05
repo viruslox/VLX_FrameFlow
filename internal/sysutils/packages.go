@@ -223,35 +223,39 @@ func InstallMlvpn() error {
 		return nil
 	}
 
-	args := []string{"install", "-y", "build-essential", "make", "autoconf", "automake", "libev-dev", "libsodium-dev", "libsodium23", "libpcap-dev", "pkg-config", "cmake", "local-apt-repository"}
-	RunCommand(20*time.Minute, "apt-get", args...)
-
-	vlxSuiteDir := os.Getenv("VLXsuite_DIR")
-	if vlxSuiteDir == "" {
-		vlxSuiteDir = "/opt/VLX_FrameFlow"
-	}
-	buildDir := vlxSuiteDir + "/mlvpn_src"
-	os.MkdirAll(buildDir, 0755)
-
-	if _, err := RunCommand(10*time.Minute, "git", "clone", "https://github.com/zehome/MLVPN.git", buildDir+"/MLVPN"); err == nil {
-		if _, err := RunCommand(5*time.Minute, "bash", "-c", "cd "+buildDir+"/MLVPN && ./autogen.sh"); err != nil {
-			return err
-		}
-
-		if _, err := RunCommand(5*time.Minute, "bash", "-c", "cd "+buildDir+"/MLVPN && ./configure"); err != nil {
-			return err
-		}
-
-		if _, err := RunCommand(20*time.Minute, "bash", "-c", "cd "+buildDir+"/MLVPN && make"); err != nil {
-			return err
-		}
-
-		if _, err := RunCommand(5*time.Minute, "bash", "-c", "cd "+buildDir+"/MLVPN && make install"); err == nil {
-			os.RemoveAll(buildDir)
-			Success("MLVPN installed successfully from source.")
-			return nil
-		}
+	if _, err := RunCommand(10*time.Minute, "apt-get", "update"); err != nil {
+		return fmt.Errorf("failed to apt-get update: %w", err)
 	}
 
-	return fmt.Errorf("failed to download and build MLVPN")
+	args := []string{"install", "-y", "build-essential", "pkg-config", "libsodium-dev", "libpcap-dev", "libev-dev", "wget", "tar"}
+	if _, err := RunCommand(20*time.Minute, "apt-get", args...); err != nil {
+		return fmt.Errorf("failed to install MLVPN dependencies: %w", err)
+	}
+
+	if _, err := RunCommand(5*time.Minute, "bash", "-c", "cd /tmp && wget https://github.com/zehome/MLVPN/releases/download/2.3.5/mlvpn-2.3.5.tar.gz -O mlvpn.tar.gz"); err != nil {
+		return fmt.Errorf("failed to download MLVPN source: %w", err)
+	}
+
+	if _, err := RunCommand(5*time.Minute, "bash", "-c", "cd /tmp && tar -xzf mlvpn.tar.gz"); err != nil {
+		return fmt.Errorf("failed to extract MLVPN source: %w", err)
+	}
+
+	if _, err := RunCommand(5*time.Minute, "bash", "-c", "cd /tmp/mlvpn-2.3.5 && ./configure"); err != nil {
+		return fmt.Errorf("failed to configure MLVPN: %w", err)
+	}
+
+	if _, err := RunCommand(20*time.Minute, "bash", "-c", "cd /tmp/mlvpn-2.3.5 && make"); err != nil {
+		return fmt.Errorf("failed to make MLVPN: %w", err)
+	}
+
+	if _, err := RunCommand(5*time.Minute, "bash", "-c", "cd /tmp/mlvpn-2.3.5 && make install"); err != nil {
+		return fmt.Errorf("failed to install MLVPN: %w", err)
+	}
+
+	// Cleanup
+	os.Remove("/tmp/mlvpn.tar.gz")
+	os.RemoveAll("/tmp/mlvpn-2.3.5")
+
+	Success("MLVPN installed successfully from source.")
+	return nil
 }
