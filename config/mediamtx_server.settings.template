@@ -1,81 +1,52 @@
 ###############################################
-# VLX FrameFlow - MediaMTX Configuration Template
+# VLX FrameFlow SERVER - MediaMTX Configuration
 ###############################################
 logLevel: info
 logDestinations: [syslog]
-#logDestinations: [file]
-#logFile: /opt/mediamtx/mediamtx.log
 sysLogPrefix: mediamtx
 readTimeout: 10s
 writeTimeout: 10s
-writeQueueSize: 512
-udpMaxPayloadSize: 1472
 
-runOnConnect:
-runOnConnectRestart: no
-runOnDisconnect:
-
+# 1. Security & Network
 authMethod: internal
 authInternalUsers:
   - user: any
     ips:
       - '127.0.0.1'
       - '::1'
-      - '192.168.168.0/24'
+      - '10.1.10.0/24' # Allow ingestion from MLVPN clients (Backpack/Cameraman)
     permissions:
       - action: publish
-        path: ~^vlxframeflow
+        path: any
       - action: read
-        path: ~^vlxframeflow
-      - action: playback
-        path: ~^vlxframeflow
-
-api: no
+        path: any
+# 2. Protocols Enablement
+api: yes            # Required for the FrameFlow Frontend dashboard to list streams
 metrics: no
 pprof: no
 playback: no
-rtsp: no
-rtmp: yes
-rtmpAddress: :1935
-rtmpEncryption: "no"
-rtmpsAddress: :1936
-rtmpServerKey:
-rtmpServerCert:
-hls: no
-webrtc: no
-srt: yes
+hls: no             # Too much latency, disabled
+webrtc: yes         # CRITICAL: Enables sub-second Director's Monitoring in browser
+srt: yes            # Primary ingest from backpack and output to VisionBridge
 srtAddress: :8890
+rtmp: yes           # Legacy fallback
+rtmpAddress: :1935
+rtsp: yes           # Standard local IPC
+rtspAddress: :8554
 
-pathDefaults:
-  source: publisher
-  sourceFingerprint:
-  sourceOnDemand: no
-  maxReaders: 0
-  srtReadPassphrase:
-  fallback:
-  useAbsoluteTimestamp: false
-  overridePublisher: yes
-  srtPublishPassphrase:
-  # Hooks & Scripts
-  runOnInit:
-  runOnInitRestart: no
-  runOnDemand:
-  runOnDemandRestart: no
-  runOnDemandStartTimeout: 10s
-  runOnDemandCloseAfter: 10s
-  runOnUnDemand:
-  # Dynamic Relay Injection Point
-  runOnReady:
-  runOnReadyRestart: no
-  runOnNotReady:
-  runOnRead:
-  runOnReadRestart: no
-  runOnUnread:
-  runOnRecordSegmentCreate:
-  runOnRecordSegmentComplete:
-
+# 3. Stream Routing & Seamless Fallback
 paths:
-  ~^vlxframeflow:
-    # PLACEHOLDER - to be updated by VLX_mediamtx.sh
-    # runOnReady: ffmpeg -i rtmp://localhost:1935/vlxframeflow/SRT_mtx -c copy -f 
-    runOnReadyRestart: yes
+  # The fallback loop that runs continuously in the background (0% CPU using stream_loop)
+  # Ensure 'offline.mp4' has the EXACT same codec, resolution, and fps as the backpack stream.
+  offline:
+    runOnInit: ffmpeg -re -stream_loop -1 -i /opt/VLX_FrameFlow/assets/offline.mp4 -c copy -f rtsp rtsp://localhost:8554/offline
+    runOnInitRestart: yes
+
+  # The main ingestion path for the backpack
+  zainetto:
+    fallback: /offline
+
+  # Secondary ingestion path for the cameraman (smartphone or second backpack)
+  cameraman:
+    # Optional: You could add a fallback here as well
+    # fallback: /offline_cameraman
