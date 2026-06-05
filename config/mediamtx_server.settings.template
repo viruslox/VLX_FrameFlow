@@ -44,12 +44,12 @@ paths:
     runOnInit: ffmpeg -re -stream_loop -1 -i /opt/VLX_FrameFlow/assets/offline.mp4 -c copy -f rtsp rtsp://localhost:8554/offline
     runOnInitRestart: yes
 
-#  ~^cam_.*:
+#  ~^wcam_.*:
 #    fallback: /offline
-  cam_01:
+  wcam_01:
     fallback: /offline
 
   # Secondary ingestion path for the cameraman (smartphone or second backpack)
-  cameraman:
+  wcam_cameraman:
     # Optional: You could add a fallback here as well
     # fallback: /offline_cameraman
