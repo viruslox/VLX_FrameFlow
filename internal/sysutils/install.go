@@ -200,7 +200,7 @@ func InstallBinary(isServer bool) error {
 			var userTemplate, userTarget string
 			if isServer {
 				userTemplate = filepath.Join(searchPath, "frameflow_srv.settings.template")
-				userTarget = filepath.Join(installConfigDir, "frameflow_srv.settings")
+				userTarget = filepath.Join(installConfigDir, "frameflow.settings")
 			} else {
 				userTemplate = filepath.Join(searchPath, "frameflow.settings.template")
 				userTarget = filepath.Join(installConfigDir, "frameflow.settings")
@@ -292,9 +292,6 @@ func InstallBinary(isServer bool) error {
 
 	// Update FRAMEFLOW_USER in frameflow.settings
 	settingsName := "frameflow.settings"
-	if isServer {
-		settingsName = "frameflow_srv.settings"
-	}
 	settingsPath := filepath.Join(installConfigDir, settingsName)
 	if _, err := os.Stat(settingsPath); err == nil {
 		settingsContent, err := os.ReadFile(settingsPath)
@@ -323,11 +320,7 @@ func InstallBinary(isServer bool) error {
 	// We'll execute the mediamtx install function if we refactor it, but for now we'll do:
 	// A new package might be needed, or we just invoke the command line.
 	// Since mediamtx install can be called from client option 8, we can call it from here by running the currently running executable using cobra commands.
-	if isServer {
-		_, err = RunCommand(10*time.Minute, targetPath, "mediamtx", "install")
-	} else {
-		_, err = RunCommand(10*time.Minute, exePath, "mediamtx", "install")
-	}
+	_, err = RunCommand(10*time.Minute, targetPath, "mediamtx", "install")
 	if err != nil {
 		Info("Warning: Failed to run mediamtx setup via CLI: %v", err)
 	}
