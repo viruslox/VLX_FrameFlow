@@ -50,6 +50,8 @@ Ensuring uninterrupted, high-bandwidth streaming from the field requires resilie
 
 The Server's MediaMTX instance maintains a continuous background loop (`/offline`) using `ffmpeg -stream_loop`. When the Client backpack loses 4G connectivity, MediaMTX natively switches the `/zainetto` path to the `/offline` fallback without terminating the TCP/UDP connection to downstream consumers (like VisionBridge or OBS). This prevents stream buffering or crashing on the final Twitch output.
 
+To prevent rapid stream flapping during minor cellular jitters, the Client employs a **State Latch** on the MLVPN tunnel. The Client continuously attempts to ping the Server tunnel (`10.1.10.1`). It will only drop the bonded UDP route and fallback to a standard unbonded route if the tunnel explicitly stays down for at least 3 consecutive checks.
+
 ## Security & Execution Flow
 
 ### Zero-Trust mTLS

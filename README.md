@@ -212,7 +212,8 @@ This file contains **all runtime environment variables**. It is generated during
 
 | Variable | Description |
 | :--- | :--- |
-| `SRT_URL` | Base SRT URL. Supports `publish:` StreamID auth. |
+| `RTSP_URL` | Base RTSP URL, primarily used for **Standard Ingest** on internal networks. |
+| `SRT_URL` | Base SRT URL, explicitly reserved for **Bonded Ingest** over the MLVPN tunnel. Safely auto-parses `publish:` StreamID credentials (`user:pass`). |
 
 **Example:**
 ```text

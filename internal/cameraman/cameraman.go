@@ -3,14 +3,21 @@ package cameraman
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/viruslox/vlx_frameflow/internal/sysutils"
+)
+
+var (
+	pingFailCount int
+	pingMutex     sync.Mutex
 )
 
 func GetVideoDevice(vidID int) (string, error) {
@@ -113,25 +120,40 @@ func BuildStreamURL(baseURL, mode string, vidID, audID int) string {
 		urlSuffix = fmt.Sprintf("A%d", audID)
 	}
 
-	if mode == "rtsp" {
-		finalURL = fmt.Sprintf("%s_%s", baseURL, urlSuffix)
-	} else if mode == "mpegts" {
-		if strings.Contains(finalURL, "publish:") {
-			parts := strings.SplitN(finalURL, "publish:", 2)
-			prefix := parts[0] + "publish:"
-			content := parts[1]
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		fmt.Printf("Error: Base stream URL is not parsable: %v\n", err)
+		return baseURL
+	}
 
-			if strings.Contains(content, ":") {
-				contentParts := strings.SplitN(content, ":", 2)
-				streamName := contentParts[0]
-				authData := contentParts[1]
-				finalURL = fmt.Sprintf("%s%s_%s:%s", prefix, streamName, urlSuffix, authData)
-			} else {
-				finalURL = fmt.Sprintf("%s_%s", finalURL, urlSuffix)
+	if mode == "rtsp" {
+		u.Path = fmt.Sprintf("%s_%s", u.Path, urlSuffix)
+		finalURL = u.String()
+	} else if mode == "mpegts" {
+		streamID := u.Query().Get("streamid")
+		if streamID != "" && strings.HasPrefix(streamID, "publish:") {
+			parts := strings.SplitN(streamID, "publish:", 2)
+			if len(parts) == 2 {
+				content := parts[1]
+				if strings.Contains(content, ":") {
+					contentParts := strings.SplitN(content, ":", 2)
+					streamName := contentParts[0]
+					authData := contentParts[1]
+					newStreamID := fmt.Sprintf("publish:%s_%s:%s", streamName, urlSuffix, authData)
+					finalURL = strings.Replace(baseURL, "streamid="+streamID, "streamid="+newStreamID, 1)
+				} else {
+					newStreamID := fmt.Sprintf("publish:%s_%s", content, urlSuffix)
+					finalURL = strings.Replace(baseURL, "streamid="+streamID, "streamid="+newStreamID, 1)
+				}
 			}
 		} else {
-			finalURL = fmt.Sprintf("%s_%s", finalURL, urlSuffix)
+			u.Path = fmt.Sprintf("%s_%s", u.Path, urlSuffix)
+			finalURL = u.String()
 		}
+	}
+
+	if _, err := url.ParseRequestURI(finalURL); err != nil {
+		fmt.Printf("Error: Generated stream URL is invalid: %v\n", err)
 	}
 
 	return finalURL
@@ -152,7 +174,17 @@ func PrepareStreamURL(protocol, rtspURL, srtURL, role string) (string, string, e
 		if strings.ToUpper(role) == "CLIENT" {
 			// ping -c 1 -W 2 10.1.10.1
 			_, err := sysutils.RunCommand(2*time.Second, "ping", "-c", "1", "-W", "2", "10.1.10.1")
+
+			pingMutex.Lock()
 			if err == nil {
+				pingFailCount = 0
+			} else {
+				pingFailCount++
+			}
+			failCount := pingFailCount
+			pingMutex.Unlock()
+
+			if failCount < 3 {
 				// Rewrite srt://something to srt://10.1.10.1
 				// regex replace srt://[^/:]+
 				re := regexp.MustCompile(`srt://[^/:]+`)
