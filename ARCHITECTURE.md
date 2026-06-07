@@ -50,7 +50,9 @@ Ensuring uninterrupted, high-bandwidth streaming from the field requires resilie
 
 The Server's MediaMTX instance maintains a continuous background loop (`/offline`) using `ffmpeg -stream_loop`. When the Client backpack loses 4G connectivity, MediaMTX natively switches the `/zainetto` path to the `/offline` fallback without terminating the TCP/UDP connection to downstream consumers (like VisionBridge or OBS). This prevents stream buffering or crashing on the final Twitch output.
 
-To prevent rapid stream flapping during minor cellular jitters, the Client employs a **State Latch** on the MLVPN tunnel. The Client continuously attempts to ping the Server tunnel (`10.1.10.1`). It will only drop the bonded UDP route and fallback to a standard unbonded route if the tunnel explicitly stays down for at least 3 consecutive checks.
+To prevent rapid stream flapping during minor cellular jitters, the Client employs a **State Latch** on the MLVPN tunnel utilizing a **Network Hysteresis** logic. The Client continuously attempts to ping the Server tunnel (`10.1.10.1`). Instead of a binary success/fail check, the system performs a retry loop (up to 3 consecutive ping attempts with a small delay). It will only drop the bonded UDP route and fallback to a standard unbonded route if the tunnel explicitly stays down and all 3 ping checks fail.
+
+Furthermore, to ensure application stability before initializing the FFmpeg encoder pipeline, the core implements **Strict URL Validation** on both `RTSP` and `SRT` streaming endpoints using Go's native `net/url` parser. The ingest will gracefully reject malformed URLs prior to execution.
 
 ## Security & Execution Flow
 

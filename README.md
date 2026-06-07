@@ -210,6 +210,8 @@ This file contains **all runtime environment variables**. It is generated during
 
 ### Streaming Endpoints
 
+Both `RTSP_URL` and `SRT_URL` endpoints undergo **Strict URL Validation** before they are actively bound to the ingest pipeline. A malformed URL configuration (e.g., missing scheme) will proactively prevent the FFmpeg streaming unit from attempting to start, and instead will yield a direct descriptive error in the log.
+
 | Variable | Description |
 | :--- | :--- |
 | `RTSP_URL` | Base RTSP URL, primarily used for **Standard Ingest** on internal networks. |

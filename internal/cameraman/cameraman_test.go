@@ -265,6 +265,8 @@ func TestPrepareStreamURL(t *testing.T) {
 		{"SRT Success CLIENT ping fails", "srt", "", "srt://myhost:1234", "CLIENT", true, "srt://myhost:1234", "mpegts", false},
 		{"SRT Success CLIENT ping succeeds", "srt", "", "srt://myhost:1234", "CLIENT", false, "srt://10.1.10.1:1234", "mpegts", false},
 		{"Default fallback Success not CLIENT", "unknown", "", "srt://otherhost:5678", "SERVER", false, "srt://otherhost:5678", "mpegts", false},
+		{"RTSP Malformed URL", "rtsp", "123://%invalid", "", "", false, "", "", true},
+		{"SRT Malformed URL", "srt", "", "123://%invalid", "SERVER", false, "", "", true},
 	}
 
 	for _, tt := range tests {
@@ -275,13 +277,13 @@ func TestPrepareStreamURL(t *testing.T) {
 				os.Setenv("MOCK_PING_FAIL", "0")
 			}
 
-				// Reset global latch state before each test run
-				pingMutex.Lock()
-				pingFailCount = 0
-				if tt.mockPingFail {
-					pingFailCount = 3 // To trigger the fallback immediately
-				}
-				pingMutex.Unlock()
+			// Reset global latch state before each test run
+			pingMutex.Lock()
+			pingFailCount = 0
+			if tt.mockPingFail {
+				pingFailCount = 3 // To trigger the fallback immediately
+			}
+			pingMutex.Unlock()
 
 			url, mode, err := PrepareStreamURL(tt.protocol, tt.rtspURL, tt.srtURL, tt.role)
 			if (err != nil) != tt.err {
@@ -307,18 +309,26 @@ func TestBuildStreamURL(t *testing.T) {
 		vidID    int
 		audID    int
 		expected string
+		err      bool
 	}{
-			{"RTSP mode", "rtsp://base", "rtsp", 1, 0, "rtsp://base/_1"},
-			{"RTSP mode vidID 0", "rtsp://base", "rtsp", 0, 1, "rtsp://base/_A1"},
-			{"MPEGTS plain", "srt://base", "mpegts", 2, 0, "srt://base/_2"},
-		{"MPEGTS publish", "srt://base?streamid=publish:test", "mpegts", 1, 0, "srt://base?streamid=publish:test_1"},
-		{"MPEGTS publish auth", "srt://base?streamid=publish:test:user:pass", "mpegts", 1, 0, "srt://base?streamid=publish:test_1:user:pass"},
-		{"MPEGTS publish auth vidID 0", "srt://base?streamid=publish:test:user:pass", "mpegts", 0, 2, "srt://base?streamid=publish:test_A2:user:pass"},
+		{"RTSP mode", "rtsp://base", "rtsp", 1, 0, "rtsp://base/_1", false},
+		{"RTSP mode vidID 0", "rtsp://base", "rtsp", 0, 1, "rtsp://base/_A1", false},
+		{"MPEGTS plain", "srt://base", "mpegts", 2, 0, "srt://base/_2", false},
+		{"MPEGTS publish", "srt://base?streamid=publish:test", "mpegts", 1, 0, "srt://base?streamid=publish:test_1", false},
+		{"MPEGTS publish auth", "srt://base?streamid=publish:test:user:pass", "mpegts", 1, 0, "srt://base?streamid=publish:test_1:user:pass", false},
+		{"MPEGTS publish auth vidID 0", "srt://base?streamid=publish:test:user:pass", "mpegts", 0, 2, "srt://base?streamid=publish:test_A2:user:pass", false},
+		{"Malformed Base URL", "123://%invalid", "srt", 1, 0, "", true},
+		{"Empty Base URL", "", "srt", 1, 0, "", true},
+		{"No Scheme", "localhost", "srt", 1, 0, "", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := BuildStreamURL(tt.baseURL, tt.mode, tt.vidID, tt.audID)
+			result, err := BuildStreamURL(tt.baseURL, tt.mode, tt.vidID, tt.audID)
+			if (err != nil) != tt.err {
+				t.Errorf("BuildStreamURL() error = %v, wantErr %v", err, tt.err)
+				return
+			}
 			if result != tt.expected {
 				t.Errorf("BuildStreamURL() = %v, want %v", result, tt.expected)
 			}

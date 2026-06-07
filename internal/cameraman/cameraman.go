@@ -112,7 +112,7 @@ func ParseCameraID(camID string) (int, int, error) {
 	return vidID, audID, nil
 }
 
-func BuildStreamURL(baseURL, mode string, vidID, audID int) string {
+func BuildStreamURL(baseURL, mode string, vidID, audID int) (string, error) {
 	finalURL := baseURL
 	urlSuffix := fmt.Sprintf("%d", vidID)
 
@@ -122,8 +122,7 @@ func BuildStreamURL(baseURL, mode string, vidID, audID int) string {
 
 	u, err := url.Parse(baseURL)
 	if err != nil {
-		fmt.Printf("Error: Base stream URL is not parsable: %v\n", err)
-		return baseURL
+		return "", fmt.Errorf("Invalid stream URL generated: %w", err)
 	}
 
 	if mode == "rtsp" {
@@ -152,11 +151,15 @@ func BuildStreamURL(baseURL, mode string, vidID, audID int) string {
 		}
 	}
 
-	if _, err := url.ParseRequestURI(finalURL); err != nil {
-		fmt.Printf("Error: Generated stream URL is invalid: %v\n", err)
+	parsedURL, err := url.Parse(finalURL)
+	if err != nil || parsedURL.Scheme == "" {
+		if err == nil {
+			err = fmt.Errorf("missing scheme")
+		}
+		return "", fmt.Errorf("Invalid stream URL generated: %v", err)
 	}
 
-	return finalURL
+	return finalURL, nil
 }
 
 func PrepareStreamURL(protocol, rtspURL, srtURL, role string) (string, string, error) {
@@ -165,6 +168,15 @@ func PrepareStreamURL(protocol, rtspURL, srtURL, role string) (string, string, e
 		if rtspURL == "" {
 			return "", "", fmt.Errorf("RTSP_URL not set in profile")
 		}
+
+		parsedURL, err := url.Parse(rtspURL)
+		if err != nil || parsedURL.Scheme == "" {
+			if err == nil {
+				err = fmt.Errorf("missing scheme")
+			}
+			return "", "", fmt.Errorf("Invalid stream URL generated: %v", err)
+		}
+
 		return rtspURL, "rtsp", nil
 	default: // srt or others
 		if srtURL == "" {
@@ -172,11 +184,20 @@ func PrepareStreamURL(protocol, rtspURL, srtURL, role string) (string, string, e
 		}
 		strURL := srtURL
 		if strings.ToUpper(role) == "CLIENT" {
-			// ping -c 1 -W 2 10.1.10.1
-			_, err := sysutils.RunCommand(2*time.Second, "ping", "-c", "1", "-W", "2", "10.1.10.1")
+			pingSuccess := false
+			for i := 0; i < 3; i++ {
+				_, err := sysutils.RunCommand(2*time.Second, "ping", "-c", "1", "-W", "2", "10.1.10.1")
+				if err == nil {
+					pingSuccess = true
+					break
+				}
+				if i < 2 {
+					time.Sleep(500 * time.Millisecond)
+				}
+			}
 
 			pingMutex.Lock()
-			if err == nil {
+			if pingSuccess {
 				pingFailCount = 0
 			} else {
 				pingFailCount++
@@ -191,6 +212,15 @@ func PrepareStreamURL(protocol, rtspURL, srtURL, role string) (string, string, e
 				strURL = re.ReplaceAllString(srtURL, "srt://10.1.10.1")
 			}
 		}
+
+		parsedURL, err := url.Parse(strURL)
+		if err != nil || parsedURL.Scheme == "" {
+			if err == nil {
+				err = fmt.Errorf("missing scheme")
+			}
+			return "", "", fmt.Errorf("Invalid stream URL generated: %v", err)
+		}
+
 		return strURL, "mpegts", nil
 	}
 }
@@ -242,12 +272,12 @@ func StartStream(cameraID string, vidID, audID int) error {
 
 	videoDevice, err := GetVideoDevice(vidID)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to get video device V%d: %w", vidID, err)
 	}
 
 	audioDeviceHW, err := GetAudioDevice(audID)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to get audio device A%d: %w", audID, err)
 	}
 
 	syncOpts := []string{"-thread_queue_size", "2048", "-use_wallclock_as_timestamps", "1", "-fflags", "+genpts"}
@@ -264,7 +294,10 @@ func StartStream(cameraID string, vidID, audID int) error {
 		cmd = append(cmd, "-f", "alsa", "-i", fmt.Sprintf("hw:%s", audioDeviceHW), "-c:a", "aac", "-b:a", "128k", "-af", "aresample=async=1")
 	}
 
-	finalURL := BuildStreamURL(strURL, strMode, vidID, audID)
+	finalURL, err := BuildStreamURL(strURL, strMode, vidID, audID)
+	if err != nil {
+		return err
+	}
 
 	if vidID != 0 {
 		cmd = append(cmd, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency")
