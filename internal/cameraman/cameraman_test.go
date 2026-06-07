@@ -275,6 +275,14 @@ func TestPrepareStreamURL(t *testing.T) {
 				os.Setenv("MOCK_PING_FAIL", "0")
 			}
 
+				// Reset global latch state before each test run
+				pingMutex.Lock()
+				pingFailCount = 0
+				if tt.mockPingFail {
+					pingFailCount = 3 // To trigger the fallback immediately
+				}
+				pingMutex.Unlock()
+
 			url, mode, err := PrepareStreamURL(tt.protocol, tt.rtspURL, tt.srtURL, tt.role)
 			if (err != nil) != tt.err {
 				t.Errorf("PrepareStreamURL() error = %v, wantErr %v", err, tt.err)
@@ -300,9 +308,9 @@ func TestBuildStreamURL(t *testing.T) {
 		audID    int
 		expected string
 	}{
-		{"RTSP mode", "rtsp://base", "rtsp", 1, 0, "rtsp://base_1"},
-		{"RTSP mode vidID 0", "rtsp://base", "rtsp", 0, 1, "rtsp://base_A1"},
-		{"MPEGTS plain", "srt://base", "mpegts", 2, 0, "srt://base_2"},
+			{"RTSP mode", "rtsp://base", "rtsp", 1, 0, "rtsp://base/_1"},
+			{"RTSP mode vidID 0", "rtsp://base", "rtsp", 0, 1, "rtsp://base/_A1"},
+			{"MPEGTS plain", "srt://base", "mpegts", 2, 0, "srt://base/_2"},
 		{"MPEGTS publish", "srt://base?streamid=publish:test", "mpegts", 1, 0, "srt://base?streamid=publish:test_1"},
 		{"MPEGTS publish auth", "srt://base?streamid=publish:test:user:pass", "mpegts", 1, 0, "srt://base?streamid=publish:test_1:user:pass"},
 		{"MPEGTS publish auth vidID 0", "srt://base?streamid=publish:test:user:pass", "mpegts", 0, 2, "srt://base?streamid=publish:test_A2:user:pass"},

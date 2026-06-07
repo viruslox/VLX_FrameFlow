@@ -17,7 +17,9 @@ MPTCP_PROXY_PASS=""
 MLVPN_KEY=""
 
 # Cameraman
+# Standard Ingest
 RTSP_URL="#rtsps://<host>:<port>/<path>/<key>"
+# Bonded Ingest
 SRT_URL="#srt://<host>:<port>?streamid=publish:<path>/<key>"
 
 # Client API
