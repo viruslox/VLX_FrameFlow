@@ -2,8 +2,11 @@ package cameraman
 
 import (
 	"bufio"
+	"bytes"
+	"database/sql"
+	"encoding/json"
 	"fmt"
-	"net/url"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,12 +16,66 @@ import (
 	"time"
 
 	"github.com/viruslox/vlx_frameflow/internal/sysutils"
+	_ "modernc.org/sqlite"
 )
 
 var (
 	pingFailCount int
 	pingMutex     sync.Mutex
+	db            *sql.DB
 )
+
+func init() {
+	settings := LoadSettings()
+	dsn := settings["DB_DSN"]
+	if dsn == "" {
+		dsn = os.Getenv("DB_DSN")
+	}
+	if dsn == "" {
+		dsn = "/opt/VLX_FrameFlow/var/frameflow.db"
+	}
+
+	var err error
+
+	// Create directory if it doesn't exist
+	dbDir := filepath.Dir(dsn)
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		fmt.Printf("Failed to create database directory: %v\n", err)
+	}
+
+	db, err = sql.Open("sqlite", dsn)
+	if err != nil {
+		fmt.Printf("Failed to open database: %v\n", err)
+		return
+	}
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS cameraman_devices (
+		id TEXT PRIMARY KEY,
+		hw_path TEXT,
+		device_type TEXT,
+		status TEXT
+	)`)
+	if err != nil {
+		fmt.Printf("Failed to create table: %v\n", err)
+		return
+	}
+
+	// Boot sync
+	rows, err := db.Query("SELECT id, device_type FROM cameraman_devices WHERE status='running'")
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var id, deviceType string
+			if err := rows.Scan(&id, &deviceType); err == nil {
+				// We don't want to block init, so run in a goroutine
+				go func(camID, hwType string) {
+					parsedID, _ := strconv.Atoi(strings.TrimPrefix(camID, hwType))
+					StartStream(camID, hwType, parsedID)
+				}(id, deviceType)
+			}
+		}
+	}
+}
 
 func GetVideoDevice(vidID int) (string, error) {
 	if vidID == 0 {
@@ -94,272 +151,218 @@ func GetAudioDevice(audID int) (string, error) {
 	return audioDevices[index], nil
 }
 
-func ParseCameraID(camID string) (int, int, error) {
-	re := regexp.MustCompile(`^V([0-9]+)A([0-9]+)$`)
+func ParseCameraID(camID string) (string, int, error) {
+	re := regexp.MustCompile(`^(V|A)([0-9]+)$`)
 	matches := re.FindStringSubmatch(camID)
 
 	if matches == nil {
-		return 0, 0, fmt.Errorf("Invalid format. Expected VxAy")
+		return "", 0, fmt.Errorf("Invalid format. Expected V1, A1, etc.")
 	}
 
-	vidID, _ := strconv.Atoi(matches[1])
-	audID, _ := strconv.Atoi(matches[2])
+	hwType := matches[1]
+	id, _ := strconv.Atoi(matches[2])
 
-	if vidID == 0 && audID == 0 {
-		return 0, 0, fmt.Errorf("Both Video and Audio ID cannot be 0.")
+	if id == 0 {
+		return "", 0, fmt.Errorf("Device ID cannot be 0.")
 	}
 
-	return vidID, audID, nil
+	return hwType, id, nil
 }
 
-func BuildStreamURL(baseURL, mode string, vidID, audID int) (string, error) {
-	finalURL := baseURL
-	urlSuffix := fmt.Sprintf("%d", vidID)
+func PrepareStreamURL(srtURL, webrtcURL string) (string, string) {
+	finalSRT := srtURL
+	finalWebRTC := webrtcURL
 
-	if vidID == 0 {
-		urlSuffix = fmt.Sprintf("A%d", audID)
+	// Check mlvpn0 interface for SRT (UDP bonding 10.1.10.1)
+	mlvpnUp := false
+	out, err := sysutils.RunCommand(2*time.Second, "ip", "link", "show", "mlvpn0")
+	if err == nil && strings.Contains(out, "state UP") {
+		mlvpnUp = true
 	}
 
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return "", fmt.Errorf("Invalid stream URL generated: %w", err)
+	if mlvpnUp {
+		re := regexp.MustCompile(`srt://[^/:]+`)
+		finalSRT = re.ReplaceAllString(srtURL, "srt://10.1.10.1")
 	}
 
-	if mode == "rtsp" {
-		u.Path = fmt.Sprintf("%s_%s", u.Path, urlSuffix)
-		finalURL = u.String()
-	} else if mode == "mpegts" {
-		streamID := u.Query().Get("streamid")
-		if streamID != "" && strings.HasPrefix(streamID, "publish:") {
-			parts := strings.SplitN(streamID, "publish:", 2)
-			if len(parts) == 2 {
-				content := parts[1]
-				if strings.Contains(content, ":") {
-					contentParts := strings.SplitN(content, ":", 2)
-					streamName := contentParts[0]
-					authData := contentParts[1]
-					newStreamID := fmt.Sprintf("publish:%s_%s:%s", streamName, urlSuffix, authData)
-					finalURL = strings.Replace(baseURL, "streamid="+streamID, "streamid="+newStreamID, 1)
-				} else {
-					newStreamID := fmt.Sprintf("publish:%s_%s", content, urlSuffix)
-					finalURL = strings.Replace(baseURL, "streamid="+streamID, "streamid="+newStreamID, 1)
-				}
-			}
-		} else {
-			u.Path = fmt.Sprintf("%s_%s", u.Path, urlSuffix)
-			finalURL = u.String()
-		}
+	// Check shadowsocks (tun0/tun1) for TCP
+	shadowsocksUp := false
+	outTun, errTun := sysutils.RunCommand(2*time.Second, "ip", "link", "show", "tun0")
+	if errTun == nil && strings.Contains(outTun, "state UP") {
+		shadowsocksUp = true
 	}
 
-	parsedURL, err := url.Parse(finalURL)
-	if err != nil || parsedURL.Scheme == "" {
-		if err == nil {
-			err = fmt.Errorf("missing scheme")
-		}
-		return "", fmt.Errorf("Invalid stream URL generated: %v", err)
+	// Rewrite WebRTC if Shadowsocks isn't up but MLVPN is
+	if !shadowsocksUp && mlvpnUp {
+		re := regexp.MustCompile(`webrtc://[^/:]+`)
+		finalWebRTC = re.ReplaceAllString(webrtcURL, "webrtc://10.1.10.1")
 	}
 
-	return finalURL, nil
+	return finalSRT, finalWebRTC
 }
 
-func PrepareStreamURL(protocol, rtspURL, srtURL, role string) (string, string, error) {
-	switch protocol {
-	case "rtsp":
-		if rtspURL == "" {
-			return "", "", fmt.Errorf("RTSP_URL not set in profile")
-		}
-
-		parsedURL, err := url.Parse(rtspURL)
-		if err != nil || parsedURL.Scheme == "" {
-			if err == nil {
-				err = fmt.Errorf("missing scheme")
-			}
-			return "", "", fmt.Errorf("Invalid stream URL generated: %v", err)
-		}
-
-		return rtspURL, "rtsp", nil
-	default: // srt or others
-		if srtURL == "" {
-			return "", "", fmt.Errorf("SRT_URL not set in profile")
-		}
-		strURL := srtURL
-		if strings.ToUpper(role) == "CLIENT" {
-			pingSuccess := false
-			for i := 0; i < 3; i++ {
-				_, err := sysutils.RunCommand(2*time.Second, "ping", "-c", "1", "-W", "2", "10.1.10.1")
-				if err == nil {
-					pingSuccess = true
-					break
-				}
-				if i < 2 {
-					time.Sleep(500 * time.Millisecond)
-				}
-			}
-
-			pingMutex.Lock()
-			if pingSuccess {
-				pingFailCount = 0
-			} else {
-				pingFailCount++
-			}
-			failCount := pingFailCount
-			pingMutex.Unlock()
-
-			if failCount < 3 {
-				// Rewrite srt://something to srt://10.1.10.1
-				// regex replace srt://[^/:]+
-				re := regexp.MustCompile(`srt://[^/:]+`)
-				strURL = re.ReplaceAllString(srtURL, "srt://10.1.10.1")
-			}
-		}
-
-		parsedURL, err := url.Parse(strURL)
-		if err != nil || parsedURL.Scheme == "" {
-			if err == nil {
-				err = fmt.Errorf("missing scheme")
-			}
-			return "", "", fmt.Errorf("Invalid stream URL generated: %v", err)
-		}
-
-		return strURL, "mpegts", nil
-	}
-}
-
-func StartStream(cameraID string, vidID, audID int) error {
+func StartStream(cameraID string, hwType string, id int) error {
 	settings := LoadSettings()
-	ffmpegPath := "/usr/bin/ffmpeg"
-	ffmpegOut, _ := sysutils.RunCommand(2*time.Second, "which", "ffmpeg")
-	if ffmpegOut != "" {
-		ffmpegPath = strings.TrimSpace(ffmpegOut)
-	}
-
-	rtspURL := settings["RTSP_URL"]
-	if rtspURL == "" {
-		rtspURL = os.Getenv("RTSP_URL")
-	}
-
 	srtURL := settings["SRT_URL"]
 	if srtURL == "" {
 		srtURL = os.Getenv("SRT_URL")
 	}
-
-	protocol := settings["STREAM_PROTOCOL"]
-	if protocol == "" {
-		protocol = os.Getenv("STREAM_PROTOCOL")
-	}
-	if protocol == "" {
-		protocol = "srt"
+	webrtcURL := settings["WEBRTC_URL"]
+	if webrtcURL == "" {
+		webrtcURL = os.Getenv("WEBRTC_URL")
 	}
 
-	role := settings["FRAMEFLOW_ROLE"]
-	if role == "" {
-		role = os.Getenv("FRAMEFLOW_ROLE")
-	}
-	if role == "" {
-		role = "CLIENT"
+	// Dynamic URLs
+	srtURL, webrtcURL = PrepareStreamURL(srtURL, webrtcURL)
+
+	hwPath := ""
+
+	payloadData := map[string]interface{}{
+		"source": "publisher",
+		"runOnInitRestart": true,
+		"runOnReadyRestart": true,
 	}
 
-	strURL, strMode, err := PrepareStreamURL(protocol, rtspURL, srtURL, role)
+	if hwType == "V" {
+		var err error
+		hwPath, err = GetVideoDevice(id)
+		if err != nil {
+			return fmt.Errorf("Failed to get video device V%d: %w", id, err)
+		}
+
+		// API Payload for V4L2
+		// Setup runOnReady for SRT + WebRTC proxy fallback
+		runOnReadyCmd := fmt.Sprintf(`ffmpeg -i rtmp://localhost:1935/$MTX_PATH -c copy -f srt "%s_%s" -c copy -f webrtc "%s_%s"`, srtURL, cameraID, webrtcURL, cameraID)
+
+		payloadData["runOnInit"] = fmt.Sprintf("ffmpeg -f v4l2 -framerate 30 -video_size 1920x1080 -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f flv rtmp://localhost:1935/$MTX_PATH", hwPath)
+		payloadData["runOnReady"] = runOnReadyCmd
+
+	} else if hwType == "A" {
+		var err error
+		hwPath, err = GetAudioDevice(id)
+		if err != nil {
+			return fmt.Errorf("Failed to get audio device A%d: %w", id, err)
+		}
+
+		runOnReadyCmd := fmt.Sprintf(`ffmpeg -i rtmp://localhost:1935/$MTX_PATH -c copy -f srt "%s_%s" -c copy -f webrtc "%s_%s"`, srtURL, cameraID, webrtcURL, cameraID)
+
+		payloadData["runOnInit"] = fmt.Sprintf("ffmpeg -f alsa -i hw:%s -c:a aac -b:a 128k -af aresample=async=1 -f flv rtmp://localhost:1935/$MTX_PATH", hwPath)
+		payloadData["runOnReady"] = runOnReadyCmd
+	}
+
+	payloadBytes, err := json.Marshal(payloadData)
 	if err != nil {
-		return err
-	}
-	unitName := fmt.Sprintf("frameflow-stream-%s", cameraID)
-
-	_, err = sysutils.RunCommand(5*time.Second, "systemctl", "--user", "is-active", "--quiet", unitName)
-	if err == nil {
-		return fmt.Errorf("Service %s is already running.", unitName)
+		return fmt.Errorf("Failed to marshal JSON payload: %w", err)
 	}
 
-	videoDevice, err := GetVideoDevice(vidID)
+	// Post to API
+	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/wcam_%s", cameraID)
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		return fmt.Errorf("Failed to get video device V%d: %w", vidID, err)
+		return fmt.Errorf("Failed to create HTTP request: %w", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 
-	audioDeviceHW, err := GetAudioDevice(audID)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Failed to get audio device A%d: %w", audID, err)
+		return fmt.Errorf("Failed to configure MediaMTX API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("MediaMTX API returned status: %d", resp.StatusCode)
 	}
 
-	syncOpts := []string{"-thread_queue_size", "2048", "-use_wallclock_as_timestamps", "1", "-fflags", "+genpts"}
-	var cmd []string
-	cmd = append(cmd, ffmpegPath)
-
-	if vidID != 0 {
-		cmd = append(cmd, syncOpts...)
-		cmd = append(cmd, "-f", "v4l2", "-framerate", "30", "-video_size", "1920x1080", "-i", videoDevice)
+	// Update DB
+	if db != nil {
+		_, err = db.Exec("INSERT INTO cameraman_devices (id, hw_path, device_type, status) VALUES (?, ?, ?, 'running') ON CONFLICT(id) DO UPDATE SET status='running', hw_path=?, device_type=?", cameraID, hwPath, hwType, hwPath, hwType)
+		if err != nil {
+			fmt.Printf("Failed to update database: %v\n", err)
+		}
 	}
 
-	if audioDeviceHW != "" {
-		cmd = append(cmd, syncOpts...)
-		cmd = append(cmd, "-f", "alsa", "-i", fmt.Sprintf("hw:%s", audioDeviceHW), "-c:a", "aac", "-b:a", "128k", "-af", "aresample=async=1")
-	}
-
-	finalURL, err := BuildStreamURL(strURL, strMode, vidID, audID)
-	if err != nil {
-		return err
-	}
-
-	if vidID != 0 {
-		cmd = append(cmd, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency")
-	}
-	cmd = append(cmd, "-f", strMode, finalURL)
-
-	runArgs := []string{
-		"--user",
-		fmt.Sprintf("--unit=%s", unitName),
-		fmt.Sprintf("--description=VLX FrameFlow Stream %s", cameraID),
-		"--collect",
-		"--property=Restart=on-failure",
-		"--property=RestartSec=5",
-		"--service-type=exec",
-	}
-	runArgs = append(runArgs, cmd...)
-
-	_, err = sysutils.RunCommand(10*time.Second, "systemd-run", runArgs...)
-	if err != nil {
-		return fmt.Errorf("failed to start stream unit: %w", err)
-	}
-
-	time.Sleep(2 * time.Second)
-
-	_, err = sysutils.RunCommand(5*time.Second, "systemctl", "--user", "is-active", "--quiet", unitName)
-	if err == nil {
-		return nil
-	}
-
-	return fmt.Errorf("Failed to start stream. Check logs.")
+	return nil
 }
 
 func StopStream(cameraID string) error {
-	unitName := fmt.Sprintf("frameflow-stream-%s", cameraID)
-	_, err := sysutils.RunCommand(10*time.Second, "systemctl", "--user", "stop", unitName)
+	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/wcam_%s", cameraID)
+
+	req, err := http.NewRequest("DELETE", apiURL, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to create HTTP request: %w", err)
 	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Failed to delete from MediaMTX API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("MediaMTX API returned status: %d", resp.StatusCode)
+	}
+
+	if db != nil {
+		_, err = db.Exec("UPDATE cameraman_devices SET status='stopped' WHERE id=?", cameraID)
+		if err != nil {
+			fmt.Printf("Failed to update database: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
 func StatusStream(cameraID string) (string, error) {
-	unitName := fmt.Sprintf("frameflow-stream-%s", cameraID)
-	out, err := sysutils.RunCommand(10*time.Second, "systemctl", "--user", "status", unitName, "--no-pager")
-	return out, err
+	if db == nil {
+		return "", fmt.Errorf("Database not initialized")
+	}
+
+	var status string
+	err := db.QueryRow("SELECT status FROM cameraman_devices WHERE id=?", cameraID).Scan(&status)
+	if err != nil {
+		return "", fmt.Errorf("Stream %s not found in DB", cameraID)
+	}
+
+	// Query MediaMTX
+	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/paths/wcam_%s", cameraID)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return fmt.Sprintf("● %s - API: not found, DB: %s", cameraID, status), nil
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("● %s - API: not found, DB: %s", cameraID, status), nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Sprintf("● %s - API: not found, DB: %s", cameraID, status), nil
+	}
+
+	return fmt.Sprintf("● %s - API: active, DB: %s", cameraID, status), nil
 }
 
 func StatusAllStreams() (string, error) {
-	out, err := sysutils.RunCommand(10*time.Second, "systemctl", "--user", "list-units", "frameflow-stream-*", "--no-legend", "--plain")
-	if err != nil {
-		return "", err
+	if db == nil {
+		return "No active cameraman services running.", nil
 	}
 
-	lines := strings.Split(out, "\n")
+	rows, err := db.Query("SELECT id, status FROM cameraman_devices WHERE status='running'")
+	if err != nil {
+		return "No active cameraman services running.", nil
+	}
+	defer rows.Close()
+
 	var activeUnits []string
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) >= 5 {
-			desc := strings.Join(fields[4:], " ")
-			activeUnits = append(activeUnits, "● "+fields[0]+" - "+desc)
-		} else if len(fields) > 0 {
-			activeUnits = append(activeUnits, "● "+fields[0])
+	for rows.Next() {
+		var id, status string
+		if err := rows.Scan(&id, &status); err == nil {
+			activeUnits = append(activeUnits, fmt.Sprintf("● %s - %s", id, status))
 		}
 	}
 

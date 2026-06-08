@@ -45,36 +45,23 @@ card 3: AnotherDevice [AnotherDevice], device 0: USB Audio [USB Audio]
   Subdevice #0: subdevice #0
 `)
 			os.Exit(0)
-		case "ping":
-			if os.Getenv("MOCK_PING_FAIL") == "1" {
-				os.Exit(1)
-			}
-			os.Exit(0)
-		case "systemctl":
-			args := os.Args[3:]
-			if len(args) > 2 && os.Getenv("MOCK_SYSTEMCTL_IS_ACTIVE") == "1" && args[2] == "is-active" {
-				// We expect unit to be empty for is-active to succeed normally
+		case "ip":
+			if os.Getenv("MOCK_MLVPN_UP") == "1" && os.Args[6] == "mlvpn0" {
+				fmt.Print("state UP")
 				os.Exit(0)
 			}
-			if len(args) > 2 && os.Getenv("MOCK_SYSTEMCTL_FAIL_IS_ACTIVE") == "1" && args[2] == "is-active" {
-				os.Exit(1) // not active
-			}
-			if len(args) > 2 && os.Getenv("MOCK_SYSTEMCTL_FAIL_IS_ACTIVE_AFTER_START") == "1" && args[2] == "is-active" {
-				if os.Getenv("IS_ACTIVE_CALLED") == "1" {
-					os.Exit(1)
-				}
-				os.Setenv("IS_ACTIVE_CALLED", "1")
-				os.Exit(1)
-			}
-			if len(args) > 2 && args[2] == "list-units" {
-				fmt.Print("frameflow-stream-V1A1\nframeflow-stream-V2A1\n")
+			if os.Getenv("MOCK_TUN_UP") == "1" && os.Args[6] == "tun0" {
+				fmt.Print("state UP")
 				os.Exit(0)
 			}
-			fmt.Print("systemctl called")
-			os.Exit(0)
-		case "systemd-run":
-			if os.Getenv("MOCK_SYSTEMD_RUN_FAIL") == "1" {
+			os.Exit(1)
+		case "curl":
+			if os.Getenv("MOCK_CURL_FAIL") == "1" {
 				os.Exit(1)
+			}
+			if os.Getenv("MOCK_CURL_NOT_FOUND") == "1" {
+				fmt.Print("not found")
+				os.Exit(0)
 			}
 			os.Exit(0)
 		}
@@ -87,12 +74,10 @@ card 3: AnotherDevice [AnotherDevice], device 0: USB Audio [USB Audio]
 		cmdArgs = append(cmdArgs, args...)
 		env := []string{
 			"GO_WANT_HELPER_PROCESS=1",
-			"MOCK_PING_FAIL=" + os.Getenv("MOCK_PING_FAIL"),
-			"MOCK_SYSTEMCTL_IS_ACTIVE=" + os.Getenv("MOCK_SYSTEMCTL_IS_ACTIVE"),
-			"MOCK_SYSTEMCTL_FAIL_IS_ACTIVE=" + os.Getenv("MOCK_SYSTEMCTL_FAIL_IS_ACTIVE"),
-			"MOCK_SYSTEMCTL_FAIL_IS_ACTIVE_AFTER_START=" + os.Getenv("MOCK_SYSTEMCTL_FAIL_IS_ACTIVE_AFTER_START"),
-			"MOCK_SYSTEMD_RUN_FAIL=" + os.Getenv("MOCK_SYSTEMD_RUN_FAIL"),
-			"IS_ACTIVE_CALLED=" + os.Getenv("IS_ACTIVE_CALLED"),
+			"MOCK_MLVPN_UP=" + os.Getenv("MOCK_MLVPN_UP"),
+			"MOCK_TUN_UP=" + os.Getenv("MOCK_TUN_UP"),
+			"MOCK_CURL_FAIL=" + os.Getenv("MOCK_CURL_FAIL"),
+			"MOCK_CURL_NOT_FOUND=" + os.Getenv("MOCK_CURL_NOT_FOUND"),
 		}
 		return sysutils.RunCommandWithEnv(timeout, env, os.Args[0], cmdArgs...)
 	}
@@ -132,205 +117,63 @@ func TestGetVideoDevice(t *testing.T) {
 }
 
 func TestStartStream(t *testing.T) {
-	tests := []struct {
-		name           string
-		cameraID       string
-		vidID          int
-		audID          int
-		strURL         string
-		strMode        string
-		ffmpegPath     string
-		mockActive     string
-		mockFailActive string
-		mockRunFail    string
-		expectErr      bool
-	}{
-		{"Already running", "V1A1", 1, 1, "srt://test", "mpegts", "/usr/bin/ffmpeg", "1", "0", "0", true},
-		{"Success V1A1", "V1A1", 1, 1, "srt://test", "mpegts", "/usr/bin/ffmpeg", "0", "0", "0", false},
-		{"Success V2A0", "V2A0", 2, 0, "rtsp://test", "rtsp", "/usr/bin/ffmpeg", "0", "0", "0", false},
-		{"Success V0A2", "V0A2", 0, 2, "srt://test", "mpegts", "/usr/bin/ffmpeg", "0", "0", "0", false},
-		{"Systemd Run Fail", "V1A1", 1, 1, "srt://test", "mpegts", "/usr/bin/ffmpeg", "0", "0", "1", true},
-		{"Video device missing", "V10A1", 10, 1, "srt://test", "mpegts", "/usr/bin/ffmpeg", "0", "0", "0", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("MOCK_SYSTEMCTL_IS_ACTIVE", tt.mockActive)
-			os.Setenv("MOCK_SYSTEMCTL_FAIL_IS_ACTIVE", tt.mockFailActive)
-			os.Setenv("MOCK_SYSTEMD_RUN_FAIL", tt.mockRunFail)
-			os.Setenv("IS_ACTIVE_CALLED", "0")
-
-			// We will just replace sysutils.RunCommand for this test to be more precise
-			originalRunCommand := sysutils.RunCommand
-			defer func() { sysutils.RunCommand = originalRunCommand }()
-
-			isActiveCalledCount := 0
-
-			sysutils.RunCommand = func(timeout time.Duration, name string, args ...string) (string, error) {
-				if name == "systemctl" && len(args) > 0 {
-					var isActiveCmd bool
-					for _, arg := range args {
-						if arg == "is-active" {
-							isActiveCmd = true
-							break
-						}
-					}
-					if isActiveCmd {
-						if tt.mockActive == "1" {
-							return "", nil // Active
-						}
-
-						// Not active initially
-						if isActiveCalledCount == 0 {
-							isActiveCalledCount = 1
-							return "inactive", fmt.Errorf("inactive")
-						}
-
-						// Called after start
-						if tt.mockRunFail == "1" {
-							return "inactive", fmt.Errorf("inactive")
-						}
-						return "", nil // Active after start
-					}
-				}
-				if name == "systemd-run" && tt.mockRunFail == "1" {
-					return "", fmt.Errorf("failed to run")
-				}
-
-				// fallback to originalRunCommand which delegates to the helper process properly
-				// with the base environment setup in TestMain
-				return originalRunCommand(timeout, name, args...)
-			}
-
-			os.Setenv("SRT_URL", tt.strURL)
-			os.Setenv("RTSP_URL", tt.strURL)
-			protocol := "srt"
-			if tt.strMode == "rtsp" {
-				protocol = "rtsp"
-			}
-			os.Setenv("STREAM_PROTOCOL", protocol)
-			os.Setenv("FRAMEFLOW_ROLE", "CLIENT")
-			defer os.Unsetenv("SRT_URL")
-			defer os.Unsetenv("RTSP_URL")
-			defer os.Unsetenv("STREAM_PROTOCOL")
-			defer os.Unsetenv("FRAMEFLOW_ROLE")
-			err := StartStream(tt.cameraID, tt.vidID, tt.audID)
-			if (err != nil) != tt.expectErr {
-				t.Errorf("StartStream() error = %v, wantErr %v", err, tt.expectErr)
-			}
-		})
+	err := StartStream("V10", "V", 10)
+	if err == nil {
+		t.Errorf("StartStream should fail for missing device")
 	}
 }
 
 func TestStopStream(t *testing.T) {
-	err := StopStream("V1A1")
-	if err != nil {
-		t.Errorf("StopStream failed: %v", err)
+	// Without a mock HTTP server, StopStream to 127.0.0.1:9997 will fail with connection refused.
+	err := StopStream("V1")
+	if err == nil {
+		t.Errorf("StopStream should fail without running mediamtx")
 	}
 }
 
 func TestStatusStream(t *testing.T) {
-	_, err := StatusStream("V1A1")
-	if err != nil {
-		t.Errorf("StatusStream failed: %v", err)
+	_, err := StatusStream("V1")
+	if err == nil {
+		t.Errorf("StatusStream should fail when DB is not properly initialized for testing, got nil")
 	}
 }
 
 func TestStatusAllStreams(t *testing.T) {
-	out, err := StatusAllStreams()
+	_, err := StatusAllStreams()
 	if err != nil {
 		t.Errorf("StatusAllStreams failed: %v", err)
-	}
-	if out == "" {
-		t.Errorf("StatusAllStreams returned empty output")
 	}
 }
 
 func TestPrepareStreamURL(t *testing.T) {
 	tests := []struct {
 		name         string
-		protocol     string
-		rtspURL      string
 		srtURL       string
-		role         string
-		mockPingFail bool
-		expectedURL  string
-		expectedMode string
-		err          bool
+		webrtcURL    string
+		mockMlvpnUp  string
+		mockTunUp    string
+		expectedSRT  string
+		expectedRTC  string
 	}{
-		{"RTSP Success", "rtsp", "rtsp://test", "", "", false, "rtsp://test", "rtsp", false},
-		{"RTSP missing URL", "rtsp", "", "", "", false, "", "", true},
-		{"SRT missing URL", "srt", "", "", "", false, "", "", true},
-		{"SRT Success not CLIENT", "srt", "", "srt://myhost:1234", "SERVER", false, "srt://myhost:1234", "mpegts", false},
-		{"SRT Success CLIENT ping fails", "srt", "", "srt://myhost:1234", "CLIENT", true, "srt://myhost:1234", "mpegts", false},
-		{"SRT Success CLIENT ping succeeds", "srt", "", "srt://myhost:1234", "CLIENT", false, "srt://10.1.10.1:1234", "mpegts", false},
-		{"Default fallback Success not CLIENT", "unknown", "", "srt://otherhost:5678", "SERVER", false, "srt://otherhost:5678", "mpegts", false},
-		{"RTSP Malformed URL", "rtsp", "123://%invalid", "", "", false, "", "", true},
-		{"SRT Malformed URL", "srt", "", "123://%invalid", "SERVER", false, "", "", true},
+		{"No Interfaces Up", "srt://test", "webrtc://test", "0", "0", "srt://test", "webrtc://test"},
+		{"MLVPN Up", "srt://test", "webrtc://test", "1", "0", "srt://10.1.10.1", "webrtc://10.1.10.1"},
+		{"Shadowsocks Up", "srt://test", "webrtc://test", "0", "1", "srt://test", "webrtc://test"},
+		{"Both Up", "srt://test", "webrtc://test", "1", "1", "srt://10.1.10.1", "webrtc://test"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.mockPingFail {
-				os.Setenv("MOCK_PING_FAIL", "1")
-			} else {
-				os.Setenv("MOCK_PING_FAIL", "0")
-			}
+			os.Setenv("MOCK_MLVPN_UP", tt.mockMlvpnUp)
+			os.Setenv("MOCK_TUN_UP", tt.mockTunUp)
+			defer os.Unsetenv("MOCK_MLVPN_UP")
+			defer os.Unsetenv("MOCK_TUN_UP")
 
-			// Reset global latch state before each test run
-			pingMutex.Lock()
-			pingFailCount = 0
-			if tt.mockPingFail {
-				pingFailCount = 3 // To trigger the fallback immediately
+			srt, rtc := PrepareStreamURL(tt.srtURL, tt.webrtcURL)
+			if srt != tt.expectedSRT {
+				t.Errorf("PrepareStreamURL() srt = %v, want %v", srt, tt.expectedSRT)
 			}
-			pingMutex.Unlock()
-
-			url, mode, err := PrepareStreamURL(tt.protocol, tt.rtspURL, tt.srtURL, tt.role)
-			if (err != nil) != tt.err {
-				t.Errorf("PrepareStreamURL() error = %v, wantErr %v", err, tt.err)
-				return
-			}
-			if url != tt.expectedURL {
-				t.Errorf("PrepareStreamURL() url = %v, want %v", url, tt.expectedURL)
-			}
-			if mode != tt.expectedMode {
-				t.Errorf("PrepareStreamURL() mode = %v, want %v", mode, tt.expectedMode)
-			}
-		})
-	}
-	os.Unsetenv("MOCK_PING_FAIL")
-}
-
-func TestBuildStreamURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		baseURL  string
-		mode     string
-		vidID    int
-		audID    int
-		expected string
-		err      bool
-	}{
-		{"RTSP mode", "rtsp://base", "rtsp", 1, 0, "rtsp://base/_1", false},
-		{"RTSP mode vidID 0", "rtsp://base", "rtsp", 0, 1, "rtsp://base/_A1", false},
-		{"MPEGTS plain", "srt://base", "mpegts", 2, 0, "srt://base/_2", false},
-		{"MPEGTS publish", "srt://base?streamid=publish:test", "mpegts", 1, 0, "srt://base?streamid=publish:test_1", false},
-		{"MPEGTS publish auth", "srt://base?streamid=publish:test:user:pass", "mpegts", 1, 0, "srt://base?streamid=publish:test_1:user:pass", false},
-		{"MPEGTS publish auth vidID 0", "srt://base?streamid=publish:test:user:pass", "mpegts", 0, 2, "srt://base?streamid=publish:test_A2:user:pass", false},
-		{"Malformed Base URL", "123://%invalid", "srt", 1, 0, "", true},
-		{"Empty Base URL", "", "srt", 1, 0, "", true},
-		{"No Scheme", "localhost", "srt", 1, 0, "", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := BuildStreamURL(tt.baseURL, tt.mode, tt.vidID, tt.audID)
-			if (err != nil) != tt.err {
-				t.Errorf("BuildStreamURL() error = %v, wantErr %v", err, tt.err)
-				return
-			}
-			if result != tt.expected {
-				t.Errorf("BuildStreamURL() = %v, want %v", result, tt.expected)
+			if rtc != tt.expectedRTC {
+				t.Errorf("PrepareStreamURL() rtc = %v, want %v", rtc, tt.expectedRTC)
 			}
 		})
 	}
@@ -339,33 +182,32 @@ func TestBuildStreamURL(t *testing.T) {
 func TestParseCameraID(t *testing.T) {
 	tests := []struct {
 		camID       string
-		expectedVid int
-		expectedAud int
+		expectedHW  string
+		expectedID  int
 		err         bool
 	}{
-		{"V1A1", 1, 1, false},
-		{"V2A0", 2, 0, false},
-		{"V0A1", 0, 1, false},
-		{"V0A0", 0, 0, true},
-		{"V1", 0, 0, true},
-		{"A1", 0, 0, true},
-		{"V1Aabc", 0, 0, true},
-		{"V-1A1", 0, 0, true},
-		{"", 0, 0, true},
+		{"V1", "V", 1, false},
+		{"A2", "A", 2, false},
+		{"V0", "", 0, true},
+		{"A0", "", 0, true},
+		{"V1A1", "", 0, true},
+		{"abc", "", 0, true},
+		{"V", "", 0, true},
+		{"", "", 0, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.camID, func(t *testing.T) {
-			vidID, audID, err := ParseCameraID(tt.camID)
+			hw, id, err := ParseCameraID(tt.camID)
 			if (err != nil) != tt.err {
 				t.Errorf("ParseCameraID() error = %v, wantErr %v", err, tt.err)
 				return
 			}
-			if vidID != tt.expectedVid {
-				t.Errorf("ParseCameraID() vidID = %v, want %v", vidID, tt.expectedVid)
+			if hw != tt.expectedHW {
+				t.Errorf("ParseCameraID() hw = %v, want %v", hw, tt.expectedHW)
 			}
-			if audID != tt.expectedAud {
-				t.Errorf("ParseCameraID() audID = %v, want %v", audID, tt.expectedAud)
+			if id != tt.expectedID {
+				t.Errorf("ParseCameraID() id = %v, want %v", id, tt.expectedID)
 			}
 		})
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 var cameramanCmd = &cobra.Command{
-	Use:   "cameraman <VxAy> <start|stop|status> | devlist",
+	Use:   "cameraman <V1|A1> <start|stop|status> | devlist",
 	Short: "Manages video encoding pipelines",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -49,13 +49,13 @@ var cameramanCmd = &cobra.Command{
 		}
 
 		if len(args) < 2 {
-			fmt.Println("Insufficient arguments. Expected: cameraman <VxAy> <start|stop|status>")
+			fmt.Println("Insufficient arguments. Expected: cameraman <V1|A1> <start|stop|status>")
 			os.Exit(1)
 		}
 
 		action = args[1]
 
-		vidID, audID, err := cameraman.ParseCameraID(cameraID)
+		hwType, id, err := cameraman.ParseCameraID(cameraID)
 		if err != nil {
 			fmt.Printf("Error parsing camera ID: %v\n", err)
 			os.Exit(1)
@@ -64,7 +64,7 @@ var cameramanCmd = &cobra.Command{
 		switch action {
 		case "start":
 				fmt.Printf("Starting stream %s...\n", cameraID)
-				err = cameraman.StartStream(cameraID, vidID, audID)
+				err = cameraman.StartStream(cameraID, hwType, id)
 				if err != nil {
 					fmt.Printf("Error starting stream: %v\n", err)
 					os.Exit(1)
