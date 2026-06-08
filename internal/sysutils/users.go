@@ -41,9 +41,11 @@ func SetupServiceUser(username string, isServer bool) error {
 		}
 	}
 
-	_, err = RunCommand(10*time.Second, "loginctl", "enable-linger", username)
-	if err != nil {
-		Warning("failed to enable linger for user %s: %v", username, err)
+	if !isServer {
+		_, err = RunCommand(10*time.Second, "loginctl", "enable-linger", username)
+		if err != nil {
+			Warning("failed to enable linger for user %s: %v", username, err)
+		}
 	}
 
 	vlxSuiteDir := os.Getenv("VLXsuite_DIR")
