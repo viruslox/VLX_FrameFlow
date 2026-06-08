@@ -31,11 +31,12 @@ authInternalUsers:
       - action: playback
         path: ~^wcam
 
-api: no
+api: yes
+apiAddress: 127.0.0.1:9997
 metrics: no
 pprof: no
 playback: no
-rtsp: yes
+rtsp: no
 rtmp: yes
 rtmpAddress: :1935
 rtmpEncryption: "no"
@@ -43,9 +44,10 @@ rtmpsAddress: :1936
 rtmpServerKey:
 rtmpServerCert:
 hls: no
-webrtc: no
+webrtc: yes
 srt: yes
 srtAddress: :8890
+webtransport: no
 
 pathDefaults:
   source: publisher
