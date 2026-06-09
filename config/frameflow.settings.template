@@ -17,11 +17,11 @@ MPTCP_PROXY_PASS=""
 MLVPN_KEY=""
 
 # Cameraman
+DB_DSN="/opt/VLX_FrameFlow/var/frameflow.db"
 # Standard Ingest
 WEBRTC_URL="webrtc://frameflow-server.example:8889/cam"
 # Bonded Ingest
 SRT_URL="srt://frameflow-server.example:8890?streamid=publish:cam"
-DB_DSN="/opt/VLX_FrameFlow/var/frameflow.db"
 
 # Client API
 # This is the native backend API on the Client device (SBC).
