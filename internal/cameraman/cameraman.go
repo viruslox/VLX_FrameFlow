@@ -169,36 +169,22 @@ func ParseCameraID(camID string) (string, int, error) {
 	return hwType, id, nil
 }
 
-func PrepareStreamURL(srtURL, webrtcURL string) (string, string) {
+func PrepareStreamURL(srtURL string) string {
 	finalSRT := srtURL
-	finalWebRTC := webrtcURL
 
-	// Check mlvpn0 interface for SRT (UDP bonding 10.1.10.1)
-	mlvpnUp := false
-	out, err := sysutils.RunCommand(2*time.Second, "ip", "link", "show", "mlvpn0")
-	if err == nil && strings.Contains(out, "state UP") {
-		mlvpnUp = true
+	// Check if bonding server is reachable (10.1.10.1)
+	bondingServerReach := false
+	_, err := sysutils.RunCommand(2*time.Second, "ping", "-c", "1", "-W", "1", "10.1.10.1")
+	if err == nil {
+		bondingServerReach = true
 	}
 
-	if mlvpnUp {
+	if bondingServerReach {
 		re := regexp.MustCompile(`srt://[^/:]+`)
 		finalSRT = re.ReplaceAllString(srtURL, "srt://10.1.10.1")
 	}
 
-	// Check shadowsocks (tun0/tun1) for TCP
-	shadowsocksUp := false
-	outTun, errTun := sysutils.RunCommand(2*time.Second, "ip", "link", "show", "tun0")
-	if errTun == nil && strings.Contains(outTun, "state UP") {
-		shadowsocksUp = true
-	}
-
-	// Rewrite WebRTC if Shadowsocks isn't up but MLVPN is
-	if !shadowsocksUp && mlvpnUp {
-		re := regexp.MustCompile(`webrtc://[^/:]+`)
-		finalWebRTC = re.ReplaceAllString(webrtcURL, "webrtc://10.1.10.1")
-	}
-
-	return finalSRT, finalWebRTC
+	return finalSRT
 }
 
 func StartStream(cameraID string, hwType string, id int) error {
@@ -207,13 +193,9 @@ func StartStream(cameraID string, hwType string, id int) error {
 	if srtURL == "" {
 		srtURL = os.Getenv("SRT_URL")
 	}
-	webrtcURL := settings["WEBRTC_URL"]
-	if webrtcURL == "" {
-		webrtcURL = os.Getenv("WEBRTC_URL")
-	}
 
 	// Dynamic URLs
-	srtURL, webrtcURL = PrepareStreamURL(srtURL, webrtcURL)
+	srtURL = PrepareStreamURL(srtURL)
 
 	hwPath := ""
 
@@ -231,8 +213,8 @@ func StartStream(cameraID string, hwType string, id int) error {
 		}
 
 		// API Payload for V4L2
-		// Setup runOnReady for SRT + WebRTC proxy fallback
-		runOnReadyCmd := fmt.Sprintf(`ffmpeg -i rtmp://localhost:1935/$MTX_PATH -c copy -f srt "%s_%s" -c copy -f webrtc "%s_%s"`, srtURL, cameraID, webrtcURL, cameraID)
+		// Setup runOnReady for SRT proxy
+		runOnReadyCmd := fmt.Sprintf(`ffmpeg -i rtmp://localhost:1935/$MTX_PATH -c copy -f srt "%s_%s"`, srtURL, cameraID)
 
 		payloadData["runOnInit"] = fmt.Sprintf("ffmpeg -f v4l2 -framerate 30 -video_size 1920x1080 -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f flv rtmp://localhost:1935/$MTX_PATH", hwPath)
 		payloadData["runOnReady"] = runOnReadyCmd
@@ -244,7 +226,7 @@ func StartStream(cameraID string, hwType string, id int) error {
 			return fmt.Errorf("Failed to get audio device A%d: %w", id, err)
 		}
 
-		runOnReadyCmd := fmt.Sprintf(`ffmpeg -i rtmp://localhost:1935/$MTX_PATH -c copy -f srt "%s_%s" -c copy -f webrtc "%s_%s"`, srtURL, cameraID, webrtcURL, cameraID)
+		runOnReadyCmd := fmt.Sprintf(`ffmpeg -i rtmp://localhost:1935/$MTX_PATH -c copy -f srt "%s_%s"`, srtURL, cameraID)
 
 		payloadData["runOnInit"] = fmt.Sprintf("ffmpeg -f alsa -i hw:%s -c:a aac -b:a 128k -af aresample=async=1 -f flv rtmp://localhost:1935/$MTX_PATH", hwPath)
 		payloadData["runOnReady"] = runOnReadyCmd
@@ -256,7 +238,7 @@ func StartStream(cameraID string, hwType string, id int) error {
 	}
 
 	// Post to API
-	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/wcam_%s", cameraID)
+	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/cameraman_%s", cameraID)
 
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
@@ -287,7 +269,7 @@ func StartStream(cameraID string, hwType string, id int) error {
 }
 
 func StopStream(cameraID string) error {
-	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/wcam_%s", cameraID)
+	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/cameraman_%s", cameraID)
 
 	req, err := http.NewRequest("DELETE", apiURL, nil)
 	if err != nil {
@@ -327,7 +309,7 @@ func StatusStream(cameraID string) (string, error) {
 	}
 
 	// Query MediaMTX
-	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/paths/wcam_%s", cameraID)
+	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/paths/cameraman_%s", cameraID)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return fmt.Sprintf("● %s - API: not found, DB: %s", cameraID, status), nil
