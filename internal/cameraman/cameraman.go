@@ -200,9 +200,8 @@ func StartStream(cameraID string, hwType string, id int) error {
 	hwPath := ""
 
 	payloadData := map[string]interface{}{
-		"source": "publisher",
+		"source":           "publisher",
 		"runOnInitRestart": true,
-		"runOnReadyRestart": true,
 	}
 
 	if hwType == "V" {
@@ -212,12 +211,8 @@ func StartStream(cameraID string, hwType string, id int) error {
 			return fmt.Errorf("Failed to get video device V%d: %w", id, err)
 		}
 
-		// API Payload for V4L2
-		// Setup runOnReady for SRT proxy
-		runOnReadyCmd := fmt.Sprintf(`ffmpeg -i rtmp://localhost:1935/$MTX_PATH -c copy -f srt "%s_%s"`, srtURL, cameraID)
-
-		payloadData["runOnInit"] = fmt.Sprintf("ffmpeg -f v4l2 -framerate 30 -video_size 1920x1080 -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f flv rtmp://localhost:1935/$MTX_PATH", hwPath)
-		payloadData["runOnReady"] = runOnReadyCmd
+		// API Payload for V4L2 directly streaming to SRT
+		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f v4l2 -framerate 30 -video_size 1920x1080 -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s_%s"`, hwPath, srtURL, cameraID)
 
 	} else if hwType == "A" {
 		var err error
@@ -226,10 +221,8 @@ func StartStream(cameraID string, hwType string, id int) error {
 			return fmt.Errorf("Failed to get audio device A%d: %w", id, err)
 		}
 
-		runOnReadyCmd := fmt.Sprintf(`ffmpeg -i rtmp://localhost:1935/$MTX_PATH -c copy -f srt "%s_%s"`, srtURL, cameraID)
-
-		payloadData["runOnInit"] = fmt.Sprintf("ffmpeg -f alsa -i hw:%s -c:a aac -b:a 128k -af aresample=async=1 -f flv rtmp://localhost:1935/$MTX_PATH", hwPath)
-		payloadData["runOnReady"] = runOnReadyCmd
+		// API Payload for ALSA directly streaming to SRT
+		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f alsa -i hw:%s -c:a aac -b:a 128k -af aresample=async=1 -f srt "%s_%s"`, hwPath, srtURL, cameraID)
 	}
 
 	payloadBytes, err := json.Marshal(payloadData)
