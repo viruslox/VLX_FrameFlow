@@ -25,11 +25,11 @@ authInternalUsers:
       - '10.1.10.0/24'
     permissions:
       - action: publish
-        path: ~^wcam
+        path: ~^(wificam|cameraman)
       - action: read
-        path: ~^wcam
+        path: ~^(wificam|cameraman)
       - action: playback
-        path: ~^wcam
+        path: ~^(wificam|cameraman)
 
 api: yes
 apiAddress: 127.0.0.1:9997
@@ -78,6 +78,5 @@ pathDefaults:
   runOnRecordSegmentComplete:
 
 paths:
-  ~^wcam_.*:
-    runOnReady: ffmpeg -i rtmp://localhost:$RTMP_PORT/$MTX_PATH -c copy -f srt "srt://10.1.10.1:8890?streamid=publish:$MTX_PATH"
-    runOnReadyRestart: yes
+  ~^wificam:
+  ~^cameraman:
