@@ -256,7 +256,7 @@ func StartStream(cameraID string, hwType string, id int) error {
 	}
 
 	// Post to API
-	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/cameraman_%s", cameraID)
+	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/add/cameraman_%s", cameraID)
 
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
@@ -287,7 +287,7 @@ func StartStream(cameraID string, hwType string, id int) error {
 }
 
 func StopStream(cameraID string) error {
-	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/cameraman_%s", cameraID)
+	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/delete/cameraman_%s", cameraID)
 
 	req, err := http.NewRequest("DELETE", apiURL, nil)
 	if err != nil {
@@ -327,7 +327,7 @@ func StatusStream(cameraID string) (string, error) {
 	}
 
 	// Query MediaMTX
-	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/paths/cameraman_%s", cameraID)
+	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/paths/get/cameraman_%s", cameraID)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return fmt.Sprintf("● %s - API: not found, DB: %s", cameraID, status), nil
