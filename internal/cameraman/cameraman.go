@@ -152,6 +152,129 @@ func GetAudioDevice(audID int) (string, error) {
 	return audioDevices[index], nil
 }
 
+type FormatCapability struct {
+	Format string
+	Width  int
+	Height int
+	FPS    float64
+}
+
+func parseV4l2Ctl(out string) []FormatCapability {
+	var caps []FormatCapability
+	lines := strings.Split(out, "\n")
+
+	var currentFormat string
+	var currentWidth, currentHeight int
+
+	formatRe := regexp.MustCompile(`\[\d+\]: '([^']+)'`)
+	sizeRe := regexp.MustCompile(`Size: Discrete (\d+)x(\d+)`)
+	fpsRe := regexp.MustCompile(`Interval: Discrete .* \(([\d\.]+) fps\)`)
+
+	for _, line := range lines {
+		if m := formatRe.FindStringSubmatch(line); m != nil {
+			currentFormat = m[1]
+			currentWidth = 0
+			currentHeight = 0
+		} else if m := sizeRe.FindStringSubmatch(line); m != nil {
+			fmt.Sscanf(m[1], "%d", &currentWidth)
+			fmt.Sscanf(m[2], "%d", &currentHeight)
+		} else if m := fpsRe.FindStringSubmatch(line); m != nil {
+			var fps float64
+			fmt.Sscanf(m[1], "%f", &fps)
+			if currentFormat != "" && currentWidth > 0 && currentHeight > 0 {
+				caps = append(caps, FormatCapability{
+					Format: currentFormat,
+					Width:  currentWidth,
+					Height: currentHeight,
+					FPS:    fps,
+				})
+			}
+		}
+	}
+	return caps
+}
+
+func parseFfmpegFormats(out string) []FormatCapability {
+	var caps []FormatCapability
+	lines := strings.Split(out, "\n")
+
+	re := regexp.MustCompile(`^\[.*?\]\s*(?:Raw|Compressed)\s*:\s*(.*?)\s*:\s*(.*?)\s*:\s*(.*)$`)
+
+	for _, line := range lines {
+		m := re.FindStringSubmatch(strings.TrimSpace(line))
+		if m != nil {
+			formatName := strings.TrimSpace(m[1])
+			resolutionsStr := strings.TrimSpace(m[3])
+
+			resolutions := strings.Fields(resolutionsStr)
+			for _, res := range resolutions {
+				var w, h int
+				if n, err := fmt.Sscanf(res, "%dx%d", &w, &h); err == nil && n == 2 {
+					caps = append(caps, FormatCapability{
+						Format: formatName,
+						Width:  w,
+						Height: h,
+						FPS:    30.0,
+					})
+				}
+			}
+		}
+	}
+	return caps
+}
+
+func DetermineBestFormat(v4l2Caps, ffmpegCaps []FormatCapability) FormatCapability {
+	var caps []FormatCapability
+	if len(v4l2Caps) > 0 {
+		caps = v4l2Caps
+	} else if len(ffmpegCaps) > 0 {
+		caps = ffmpegCaps
+	} else {
+		return FormatCapability{Format: "default", Width: 1920, Height: 1080, FPS: 30}
+	}
+
+	bestScore := -1
+	bestCap := FormatCapability{}
+
+	formatScore := func(f string) int {
+		f = strings.ToLower(f)
+		if strings.Contains(f, "h264") {
+			return 100
+		}
+		if strings.Contains(f, "mjpg") || strings.Contains(f, "mjpeg") {
+			return 50
+		}
+		return 10
+	}
+
+	for _, cap := range caps {
+		score := formatScore(cap.Format)*10000 + cap.Width*cap.Height
+		if score > bestScore {
+			bestScore = score
+			bestCap = cap
+		}
+	}
+
+	return bestCap
+}
+
+func GetDeviceCapabilitiesV4L2(hwPath string) []FormatCapability {
+	out, err := sysutils.RunCommand(10*time.Second, "v4l2-ctl", "-d", hwPath, "--list-formats-ext")
+	if err != nil {
+		return nil
+	}
+	return parseV4l2Ctl(out)
+}
+
+func GetDeviceCapabilitiesFFmpeg(hwPath string) []FormatCapability {
+	out, err := sysutils.RunCommand(10*time.Second, "ffmpeg", "-f", "v4l2", "-list_formats", "all", "-i", hwPath)
+	if err != nil {
+		// Even if ffmpeg exits with error (e.g. "Error opening input file"), we can parse stdout/stderr
+		return parseFfmpegFormats(out)
+	}
+	return parseFfmpegFormats(out)
+}
+
 func ParseCameraID(camID string) (string, int, error) {
 	re := regexp.MustCompile(`^(V|A)([0-9]+)$`)
 	matches := re.FindStringSubmatch(camID)
@@ -236,8 +359,34 @@ func StartStream(cameraID string, hwType string, id int) error {
 			return fmt.Errorf("Failed to get video device V%d: %w", id, err)
 		}
 
+		v4l2Caps := GetDeviceCapabilitiesV4L2(hwPath)
+		ffmpegCaps := GetDeviceCapabilitiesFFmpeg(hwPath)
+		bestFormat := DetermineBestFormat(v4l2Caps, ffmpegCaps)
+
+		fps := bestFormat.FPS
+		if fps == 0 {
+			fps = 30
+		}
+
+		ffmpegStr := ""
+		formatName := strings.ToLower(bestFormat.Format)
+
+		if formatName == "default" {
+			// Fallback if we couldn't parse formats
+			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -framerate 30 -video_size 1920x1080 -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, hwPath, AppendCameraID(srtURL, cameraID))
+		} else if strings.Contains(formatName, "h264") {
+			// Copy H264 stream natively
+			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format h264 -framerate %f -video_size %dx%d -i %s -c:v copy -f srt "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
+		} else if strings.Contains(formatName, "mjpg") || strings.Contains(formatName, "mjpeg") {
+			// Hardware outputs MJPEG, we usually transcode to H264 for compatibility
+			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format mjpeg -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
+		} else {
+			// Raw formats like yuyv422
+			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format %s -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, formatName, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
+		}
+
 		// API Payload for V4L2 directly streaming to SRT
-		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f v4l2 -framerate 30 -video_size 1920x1080 -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, hwPath, AppendCameraID(srtURL, cameraID))
+		payloadData["runOnInit"] = ffmpegStr
 
 	} else if hwType == "A" {
 		var err error
