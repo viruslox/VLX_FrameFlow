@@ -28,8 +28,9 @@ authInternalUsers:
         path: ~^(wificam|cameraman)
       - action: read
         path: ~^(wificam|cameraman)
-      - action: playback
-        path: ~^(wificam|cameraman)
+      - action: api
+      - action: metrics
+      - action: pprof
 
 api: yes
 apiAddress: 127.0.0.1:9997
@@ -47,7 +48,6 @@ hls: no
 webrtc: yes
 srt: yes
 srtAddress: :8890
-webtransport: no
 
 pathDefaults:
   source: publisher
@@ -79,4 +79,5 @@ pathDefaults:
 
 paths:
   ~^wificam:
+    runOnReady: ffmpeg -i rtmp://localhost:$RTMP_PORT/$MTX_PATH -c copy -f srt "srt://10.1.10.1:8890?streamid=publish:$MTX_PATH"
   ~^cameraman:

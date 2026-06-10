@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -187,6 +188,30 @@ func PrepareStreamURL(srtURL string) string {
 	return finalSRT
 }
 
+func AppendCameraID(srtURL, cameraID string) string {
+	u, err := url.Parse(srtURL)
+	if err != nil {
+		return fmt.Sprintf("%s_%s", srtURL, cameraID)
+	}
+
+	q := u.Query()
+	streamid := q.Get("streamid")
+	if streamid != "" {
+		parts := strings.Split(streamid, ":")
+		if len(parts) >= 2 {
+			parts[1] = fmt.Sprintf("%s_%s", parts[1], cameraID)
+			q.Set("streamid", strings.Join(parts, ":"))
+			u.RawQuery = q.Encode()
+			// To match expected format strictly, prevent encoding `:` to `%3A`
+			res := u.String()
+			res = strings.ReplaceAll(res, "%3A", ":")
+			return res
+		}
+	}
+
+	return fmt.Sprintf("%s_%s", srtURL, cameraID)
+}
+
 func StartStream(cameraID string, hwType string, id int) error {
 	settings := LoadSettings()
 	srtURL := settings["SRT_URL"]
@@ -212,7 +237,7 @@ func StartStream(cameraID string, hwType string, id int) error {
 		}
 
 		// API Payload for V4L2 directly streaming to SRT
-		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f v4l2 -framerate 30 -video_size 1920x1080 -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s_%s"`, hwPath, srtURL, cameraID)
+		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f v4l2 -framerate 30 -video_size 1920x1080 -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, hwPath, AppendCameraID(srtURL, cameraID))
 
 	} else if hwType == "A" {
 		var err error
@@ -222,7 +247,7 @@ func StartStream(cameraID string, hwType string, id int) error {
 		}
 
 		// API Payload for ALSA directly streaming to SRT
-		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f alsa -i hw:%s -c:a aac -b:a 128k -af aresample=async=1 -f srt "%s_%s"`, hwPath, srtURL, cameraID)
+		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f alsa -i hw:%s -c:a aac -b:a 128k -af aresample=async=1 -f srt "%s"`, hwPath, AppendCameraID(srtURL, cameraID))
 	}
 
 	payloadBytes, err := json.Marshal(payloadData)
