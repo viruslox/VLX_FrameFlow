@@ -18,9 +18,7 @@ MLVPN_KEY=""
 
 # Cameraman
 DB_DSN="/opt/VLX_FrameFlow/var/frameflow.db"
-# Standard Ingest
-WEBRTC_URL="webrtc://frameflow-server.example:8889/cam"
-# Bonded Ingest
+# SRT target
 SRT_URL="srt://frameflow-server.example:8890?streamid=publish:cam"
 
 # Client API
