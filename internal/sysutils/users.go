@@ -24,6 +24,8 @@ func SetupServiceUser(username string, isServer bool) error {
 
 	Info("Setting up user: %s", username)
 
+	isClientRole := !isServer && os.Getenv("FRAMEFLOW_ROLE") != "SERVER"
+
 	_, err := user.Lookup(username)
 	if err != nil {
 		// User doesn't exist, create it
@@ -33,18 +35,20 @@ func SetupServiceUser(username string, isServer bool) error {
 		}
 	}
 
-	groups := []string{"crontab", "dialout", "tty", "video", "audio", "plugdev", "netdev", "i2c", "bluetooth"}
-	for _, group := range groups {
-		_, err = RunCommand(10*time.Second, "usermod", "-a", "-G", group, username)
-		if err != nil {
-			Warning("failed to add user %s to group %s: %v", username, group, err)
+	if isClientRole {
+		groups := []string{"crontab", "dialout", "tty", "video", "audio", "plugdev", "netdev", "i2c", "bluetooth"}
+		for _, group := range groups {
+			_, err = RunCommand(10*time.Second, "usermod", "-a", "-G", group, username)
+			if err != nil {
+				Warning("failed to add user %s to group %s: %v", username, group, err)
+			}
 		}
-	}
 
-	if !isServer {
-		_, err = RunCommand(10*time.Second, "loginctl", "enable-linger", username)
-		if err != nil {
-			Warning("failed to enable linger for user %s: %v", username, err)
+		if username != "root" {
+			_, err = RunCommand(10*time.Second, "loginctl", "enable-linger", username)
+			if err != nil {
+				Warning("failed to enable linger for user %s: %v", username, err)
+			}
 		}
 	}
 
@@ -76,24 +80,22 @@ func SetupServiceUser(username string, isServer bool) error {
 		Warning("failed to create user profile: %v", err)
 	}
 
-	if !isServer {
+	if isClientRole {
 		err = SetupBashAliases(username)
 		if err != nil {
 			Warning("failed to setup bash aliases: %v", err)
 		}
-	}
 
-	if !isServer {
 		err = SetupUserPath(username)
 		if err != nil {
 			Warning("failed to setup user path: %v", err)
 		}
-	}
 
-	if username != "root" && !isServer && os.Getenv("FRAMEFLOW_ROLE") != "SERVER" {
-		err = SetupSudoUser(username, "")
-		if err != nil {
-			Warning("failed to setup sudoers: %v", err)
+		if username != "root" {
+			err = SetupSudoUser(username, "")
+			if err != nil {
+				Warning("failed to setup sudoers: %v", err)
+			}
 		}
 	}
 
