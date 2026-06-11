@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -65,6 +66,9 @@ func GetGPSDevice() (string, error) {
 func StartGPSD(gpsPort string) error {
 	gpsdUnit := "frameflow-gpsd"
 
+	sysutils.RunCommand(5*time.Second, "systemctl", "--user", "reset-failed", "frameflow-gpsd")
+	sysutils.RunCommand(5*time.Second, "systemctl", "--user", "reset-failed", "frameflow-gps-sender")
+
 	// Check if already running
 	_, err := sysutils.RunCommand(5*time.Second, "systemctl", "--user", "is-active", "--quiet", gpsdUnit)
 	if err == nil {
@@ -100,11 +104,25 @@ func StartGPSD(gpsPort string) error {
 		return fmt.Errorf("Failed to start GPSD: %w", err)
 	}
 
+	vlxClientPath, _ := os.Executable()
+	_, err = sysutils.RunCommand(10*time.Second, "systemd-run", "--user",
+		"--unit=frameflow-gps-sender",
+		"--description=VLX FrameFlow GPS Sender",
+		"--collect",
+		"--property=Restart=on-failure",
+		"--property=RestartSec=5",
+		"--service-type=exec",
+		vlxClientPath, "gps", "sender")
+	if err != nil {
+		return fmt.Errorf("Failed to start GPS Sender: %w", err)
+	}
+
 	return nil
 }
 
 func StopGPSD() error {
 	sysutils.Info("Stopping services...")
+	sysutils.RunCommand(10*time.Second, "systemctl", "--user", "stop", "frameflow-gps-sender")
 	sysutils.RunCommand(10*time.Second, "systemctl", "--user", "stop", "frameflow-gpsd")
 	return nil
 }
@@ -162,11 +180,17 @@ func RunSender(ctx context.Context, gpsPort, targetURL string) error {
 	scanner := bufio.NewScanner(conn)
 	client := &http.Client{Timeout: 10 * time.Second}
 
+	var lastSend time.Time
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+
+		// Drain socket at max speed, process only every 5 seconds
+		if time.Since(lastSend) < 5*time.Second {
+			continue
 		}
 
 		line := scanner.Bytes()
@@ -208,6 +232,7 @@ func RunSender(ctx context.Context, gpsPort, targetURL string) error {
 
 		req.Header.Set("Content-Type", "application/json")
 
+		lastSend = time.Now()
 		// Fire and forget POST request
 		go func(r *http.Request) {
 			resp, err := client.Do(r)
@@ -215,19 +240,15 @@ func RunSender(ctx context.Context, gpsPort, targetURL string) error {
 				sysutils.Warning("Failed to send GPS data: %v", err)
 				return
 			}
-			defer resp.Body.Close()
+			defer func() {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+			}()
 
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				sysutils.Warning("API returned non-200 status code: %d", resp.StatusCode)
 			}
 		}(req)
-
-		// sleep for 5 seconds matching bash script behavior
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(5 * time.Second):
-		}
 	}
 
 	if err := scanner.Err(); err != nil {
