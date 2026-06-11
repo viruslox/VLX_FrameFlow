@@ -2,7 +2,6 @@ package api
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -61,24 +60,17 @@ func (a *API) RegisterRoutes(r *gin.Engine) {
 	api.POST("/cameraman/:action", a.handleCameraman)
 
 	// Client extra actions
-	api.POST("/v1/client/reset", gin.WrapF(HandleClientReset))
-	api.OPTIONS("/v1/client/reset", gin.WrapF(HandleClientReset))
+	api.POST("/v1/client/reset", HandleClientReset)
 
 	// GPS actions
-	api.POST("/v1/gps/start", gin.WrapF(HandleGPSStart))
-	api.OPTIONS("/v1/gps/start", gin.WrapF(HandleGPSStart))
-	api.POST("/v1/gps/stop", gin.WrapF(HandleGPSStop))
-	api.OPTIONS("/v1/gps/stop", gin.WrapF(HandleGPSStop))
-	api.GET("/v1/gps/status", gin.WrapF(HandleGPSStatus))
-	api.OPTIONS("/v1/gps/status", gin.WrapF(HandleGPSStatus))
+	api.POST("/v1/gps/start", HandleGPSStart)
+	api.POST("/v1/gps/stop", HandleGPSStop)
+	api.GET("/v1/gps/status", HandleGPSStatus)
 
 	// MediaMTX actions
-	api.POST("/v1/mediamtx/start", gin.WrapF(HandleMediaMTXStart))
-	api.OPTIONS("/v1/mediamtx/start", gin.WrapF(HandleMediaMTXStart))
-	api.POST("/v1/mediamtx/stop", gin.WrapF(HandleMediaMTXStop))
-	api.OPTIONS("/v1/mediamtx/stop", gin.WrapF(HandleMediaMTXStop))
-	api.GET("/v1/mediamtx/status", gin.WrapF(HandleMediaMTXStatus))
-	api.OPTIONS("/v1/mediamtx/status", gin.WrapF(HandleMediaMTXStatus))
+	api.POST("/v1/mediamtx/start", HandleMediaMTXStart)
+	api.POST("/v1/mediamtx/stop", HandleMediaMTXStop)
+	api.GET("/v1/mediamtx/status", HandleMediaMTXStatus)
 
 	// Server Relay
 	api.Any("/v1/relay/*path", a.handleRelay)
@@ -342,82 +334,54 @@ func (a *API) handleRelay(c *gin.Context) {
 }
 
 // --- Client Reset ---
-func HandleClientReset(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+func HandleClientReset(c *gin.Context) {
 	if err := network.ClientReset(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "client reset initiated"})
+	c.JSON(http.StatusOK, gin.H{"status": "client reset initiated"})
 }
 
 // --- GPS Handlers ---
-func HandleGPSStart(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+func HandleGPSStart(c *gin.Context) {
 	if err := gps.StartGPSD("/dev/ttyUSB0"); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "gps started"})
+	c.JSON(http.StatusOK, gin.H{"status": "gps started"})
 }
 
-func HandleGPSStop(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+func HandleGPSStop(c *gin.Context) {
 	if err := gps.StopGPSD(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "gps stopped"})
+	c.JSON(http.StatusOK, gin.H{"status": "gps stopped"})
 }
 
-func HandleGPSStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+func HandleGPSStatus(c *gin.Context) {
 	status := gps.StatusGPSD()
-	json.NewEncoder(w).Encode(map[string]string{"status": status})
+	c.JSON(http.StatusOK, gin.H{"status": status})
 }
 
 // --- MediaMTX Handlers ---
-func HandleMediaMTXStart(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+func HandleMediaMTXStart(c *gin.Context) {
 	if err := mediamtx.Start(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "mediamtx started"})
+	c.JSON(http.StatusOK, gin.H{"status": "mediamtx started"})
 }
 
-func HandleMediaMTXStop(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+func HandleMediaMTXStop(c *gin.Context) {
 	if err := mediamtx.Stop(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "mediamtx stopped"})
+	c.JSON(http.StatusOK, gin.H{"status": "mediamtx stopped"})
 }
 
-func HandleMediaMTXStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
+func HandleMediaMTXStatus(c *gin.Context) {
 	status := mediamtx.Status()
-	json.NewEncoder(w).Encode(map[string]string{"status": status})
+	c.JSON(http.StatusOK, gin.H{"status": status})
 }
