@@ -33,7 +33,21 @@ The project has been refactored from a monolithic bash structure into a compiled
 
 1. **`VLX_FrameFlow` (The Client):** Exclusively deployed on Single Board Computers (like Orange Pi 5 Plus or Radxa Rock 5T). Responsible for hardware interactions: capturing video via v4l2, managing hostapd/networkd, and gathering GPS data. It serves the mTLS-protected API.
 2. **`VLX_FrameFlow_SRV` (The Server):** Exclusively deployed on a Virtual Private Server (VPS). Lightweight, focusing strictly on relaying traffic, receiving bonded connections, and enforcing UFW firewall rules.
-3. **`vlx_frontend` (The UI):** A standalone web server encapsulating a pre-built Svelte SPA (`//go:embed`). Designed to run remotely on an operator's machine or in the cloud to manage the Field Unit via secure APIs.
+3. **`vlx_frontend` (The UI):** A standalone web server encapsulating a pre-built Svelte SPA (`//go:embed`). Designed to run remotely on an operator's machine or in the cloud to manage the Field Unit via secure APIs. The frontend utilizes parallel REST polling (`Promise.all`) to dynamically fetch backend state, features a semantic parser for translating systemd string statuses (e.g., 'active', 'inactive', 'failed'), organizes UI components via CSS Grid layout, and streams text console output utilizing an `ansi-to-html` converter for colorized logs.
+
+## API Framework & Routing
+
+The core API has transitioned to utilizing the highly performant `Gin` framework (`github.com/gin-gonic/gin`). HTTP routes are registered using native Gin handler signatures (`func(c *gin.Context)`) rather than wrapping standard `http.HandlerFunc` components. Global CORS middleware handles OPTIONS requests automatically.
+
+### Operational Endpoints
+
+The unprivileged user interacts with the backend components via a standardized REST API structured primarily as `/api/v1/<module>/{start,stop,status,reset}`. Key operational endpoints include:
+
+- **`/api/v1/client/reset`**: Initiates a full reset of client networking and bonding.
+- **`/api/v1/gps/start` \| `stop` \| `status`**: Manages the transient systemd user unit for the GPS telemetry process.
+- **`/api/v1/mediamtx/start` \| `stop` \| `status`**: Controls the local MediaMTX static user service.
+- **`/api/v1/cameraman/start` \| `stop` \| `status`**: Orchestrates FFmpeg encoding pipelines directly to the MediaMTX API.
+- **`/api/v1/ap/start` \| `stop` \| `status`**: Triggers internal privilege escalation to manipulate `hostapd` and network interfaces.
 
 ## Unified Configuration Paradigm
 
@@ -65,11 +79,23 @@ To secure the connection between the remote `vlx_frontend` and the SBC's `VLX_Fr
 
 ### "Build as User, Run as Root"
 
-To maintain security and FHS compliance, the suite enforces a strict compilation and deployment workflow:
+The suite enforces a strict dichotomy between Client and Server roles regarding execution privilege and systemd architecture:
+
 1.  **Build:** Unprivileged compilation via `build.sh`.
 2.  **Install:** Executing the compiled binary as root triggers `internal/sysutils.InstallBinary()`.
 3.  **Deploy:** The binaries place themselves into `/opt/VLX_FrameFlow/bin/` and configure templates in `/opt/VLX_FrameFlow/etc/`.
-4.  **Run:** Background services execute as the dedicated, unprivileged `$FRAMEFLOW_USER` via `systemd --user` units to limit the blast radius.
+4.  **Run (CLIENT):** On the SBC/Field Unit, background services must strictly execute as the dedicated, unprivileged `$FRAMEFLOW_USER`. Systemd management uses User-Space Systemd (`systemctl --user`). Unit files are generated in `~/.config/systemd/user/` and explicitly target `default.target`. **Important:** Systemd Lingering (`loginctl enable-linger`) must be enabled by root during initial setup to allow background execution without an active SSH session.
+5.  **Run (SERVER):** On the VPS/Relay Node, the main daemon strictly requires `root` execution (UID 0) to orchestrate routing and UFW firewall rules. Systemd management uses System-Space Systemd (`/etc/systemd/system/`) and targets `multi-user.target`. To maintain security, the server relies on **Privilege Dropping** (`User=`, `Group=`) inside the unit templates for specific exposed services (like MediaMTX) to minimize the blast radius.
+
+### AP Module Privilege Escalation Pattern
+
+The Access Point (AP) module within the Client architecture necessitates modifying system-level network configurations (`hostapd`, `systemd-networkd`, `systemd-resolved`) which requires root access. However, the Client CLI operates as an unprivileged user.
+
+To bridge this gap securely, the suite implements a strict internal privilege escalation pattern:
+- Unprivileged CLI commands wrap themselves in `sudo` to call hidden internal operations (e.g., `_ap_system_ops`).
+- These hidden operations are protected by absolute root guards (`if os.Geteuid() != 0 { log.Fatal(...) }`).
+- Once inside the root context, functions executing system commands (like restarting services via `sysutils.RunCommand`) do not redundantly include `sudo`.
+
 
 
 ### Server API Command Forwarding
@@ -87,6 +113,23 @@ To facilitate communication between companion applications (such as ChatBridge) 
 The dual-protocol nature ensures network reliability without cross-contamination:
 - **Shadowsocks (via MPTCP):** Handles all bonded outbound TCP internet traffic. This is used by the Client to reach the broader internet transparently via the proxy.
 - **MLVPN (UDP):** Handles the high-bandwidth SRT streams and the secure, bidirectional internal telemetry and API command routing between the Server (`10.1.10.1`) and Client (`10.1.10.2`).
+
+## Module-Specific Behaviors
+
+The system implements several highly specific optimizations and fail-safes per module:
+
+### Cameraman
+- **Strict URL Parsing:** Incorporates robust `net/url` parsing logic to validate SRT stream IDs.
+- **Fallback Format Selection:** Employs a linear absolute-difference algorithm against user-defined maximums (`CAM_MAX_RESOLUTION`, `CAM_MAX_FPS`) to intelligently select fallback video formats (preferring H.264 copy, then MJPEG, then YUYV) when exact formats are unavailable.
+- **SQLite Concurrency:** The backend SQLite database (`modernc.org/sqlite`) is configured with `_pragma=journal_mode(WAL)` and `_pragma=busy_timeout(5000)` in its DSN to inherently prevent 'database is locked' boot race conditions during concurrent module initialization.
+
+### GPS Telemetry
+- **Socket Draining:** Implements a non-blocking TCP socket drain pattern against `gpsd` to prevent TCP buffer desynchronization and data lag typical of high-frequency positioning data.
+- **Rate Limiting:** Enforces a strict 5-second rate limit on HTTP POST transmissions to external endpoints.
+- **Transient Cleanup:** Actively manages transient systemd units, executing `systemctl --user reset-failed` during cleanup to prevent unit name conflicts.
+
+### MediaMTX & Bonding (v2ray)
+- **Dynamic Architecture Resolution:** During initialization and updates, the system dynamically checks `runtime.GOARCH` to resolve and download correct asset architectures. This strictly prevents "Exec format error" failures when deploying across heterogeneous ARM and x86_64 fleets.
 
 ## Filesystem Structure
 

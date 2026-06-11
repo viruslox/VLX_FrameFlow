@@ -16,6 +16,13 @@ VLX FrameFlow is a modular Go-based suite designed to transform Debian-based **S
 
 The suite operates via a main installation entry point compiled into a Go binary, internal Go packages, and runtime service managers. Process control is handled via **`systemd`**.
 
+### Execution Privilege & Systemd Architecture
+
+The system enforces a strict operational dichotomy based on the deployed role:
+
+- **CLIENT (SBC/Field Unit):** Strictly operates as an unprivileged dedicated user (`frameflow_user`). Systemd management utilizes User-Space Systemd (`systemctl --user`), stores unit files in `~/.config/systemd/user/`, and explicitly targets `default.target`. Systemd Lingering must be enabled by root during installation.
+- **SERVER (VPS/Relay Node):** Strictly requires `root` execution (UID 0) to manage routing and firewall rules. Systemd management utilizes System-Space Systemd (`/etc/systemd/system/`) and targets `multi-user.target`. It relies on Privilege Dropping (`User=`, `Group=`) inside the unit templates to secure exposed services like MediaMTX.
+
 The suite uses a **multi-protocol bonding architecture**: UDP traffic is routed exclusively via MLVPN, and TCP traffic is aggregated using MPTCP with Shadowsocks-libev and v2ray-plugin acting as a transparent proxy.
 
 ### Core Structure
@@ -26,9 +33,14 @@ The project has evolved into a multi-binary ecosystem to ensure role-specific fu
 | :--- | :--- |
 | **`VLX_FrameFlow`** | Client binary exclusively for SBC tasks (FFmpeg, AP, Storage, API). |
 | **`VLX_FrameFlow_SRV`** | Server binary exclusively for VPS tasks (Relay node, Firewall). |
-| **`vlx_frontend`** | Remote-capable standalone UI server. |
+| **`vlx_frontend`** | Remote-capable standalone UI server (Svelte SPA). |
 | **`config/`** | Configuration templates and maintenance scripts. |
 | **`internal/`** | Core logic (storage, system, network, package management). |
+
+### API & Frontend
+The backend API is built using the highly performant **Gin** framework (`github.com/gin-gonic/gin`) serving a standardized REST structure (`/api/v1/...`).
+
+The **Control Panel Frontend** is a compiled **Svelte** application. It dynamically polls the backend via parallel REST calls (`Promise.all`), features a semantic parser translating raw systemd statuses into visual states, and provides real-time streaming text consoles utilizing `ansi-to-html`.
 
 ---
 
@@ -132,7 +144,7 @@ Available commands:
 - **`server start` / `server status` / `server stop`**: Manage server components.
 - **`server api start` / `server api status` / `server api stop`**: Manage the local API relay for forwarding commands to the remote Client via MLVPN.
 - **`client start` / `client status` / `client stop`**: Manage client components.
-- **`client reset`**: Restarts networking and bonding services.
+- **`client reset`**: Restarts networking and bonding services. (Also exposed via `/api/v1/client/reset`).
 - **`bonding`**: Displays MPTCP proxy and MLVPN tunnel status.
 - **`AP start`**: Activates HostAP (hotspot) on the first Wi-Fi interface.
 - **`AP stop`**: Stops HostAP and switches the first Wi-Fi interface back to managed client mode.
@@ -159,7 +171,7 @@ Manages video encoding pipelines. This service is best utilized in combination w
 ./vlx_frameflow mediamtx <start|stop|status>
 ```
 
-Manages the local **MediaMTX** server (SRT protocol only). Combining this service with the suite's Access Point (AP) mode is crucial for achieving optimal performance and reliability when interfacing with devices running rigid or proprietary software, such as GoPro cameras.
+Manages the local **MediaMTX** server (SRT protocol only). Combining this service with the suite's Access Point (AP) mode is crucial for achieving optimal performance and reliability when interfacing with devices running rigid or proprietary software, such as GoPro cameras. Also exposed via REST (`/api/v1/mediamtx/start|stop|status`).
 
 **Functions:**
 
@@ -172,7 +184,7 @@ Manages the local **MediaMTX** server (SRT protocol only). Combining this servic
 ./vlx_frameflow gps <start|stop|status>
 ```
 
-Manages GPS and telemetry services. This module acts as a resilient data pipeline, ensuring real-time location and telemetry data are consistently processed and transmitted regardless of network fluctuations.
+Manages GPS and telemetry services. This module acts as a resilient data pipeline, ensuring real-time location and telemetry data are consistently processed and transmitted regardless of network fluctuations. Also exposed via REST (`/api/v1/gps/start|stop|status`).
 
 - Controls **gpsd**.
 - Auto-detects USB / serial GPS hardware.

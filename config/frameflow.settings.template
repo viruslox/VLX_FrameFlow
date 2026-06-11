@@ -1,25 +1,37 @@
 # VLX FrameFlow User Profile
+# The dedicated, unprivileged user that runs the background services.
 FRAMEFLOW_USER="frameflow"
+
+# Installation Paths
+# Paths dynamically resolved via os.Getenv("VLXsuite_DIR") in code, defaulting to:
 VLXsuite_DIR="/opt/VLX_FrameFlow"
+# Note: Architecture suffixes (e.g. AMD64 vs ARM64) for MediaMTX are handled automatically
+# by the daemon's runtime.GOARCH resolution and do not need to be appended here.
 MEDIAMTX_DIR="/opt/mediamtx"
 
 # Wi-Fi AP Password
+# Automatically generated if left empty.
 AP_PASSWORD=""
 
 # GPS Tracker
 gps_target_url=""
 
 # Network settings
+# Specifies role-aware privilege scoping. Do not manually force unless required.
 FRAMEFLOW_ROLE=""
 MLVPN_SERVER_IP=""
+# Supports native Dual-Stack TCP bonding (comma-separated IPv4, IPv6)
 SHADOWSOCKS_SERVER_IPS=""
 MPTCP_PROXY_PASS=""
 MLVPN_KEY=""
 
 # Cameraman
+# DSN utilizes _pragma=journal_mode(WAL)&_pragma=busy_timeout(5000) internally to prevent boot race conditions.
 DB_DSN="/opt/VLX_FrameFlow/var/frameflow.db"
 # SRT target
+# Undergoes strict net/url validation before the encoding pipeline starts.
 SRT_URL="srt://frameflow-server.example:8890?streamid=publish:cam"
+# User-defined ceilings that the linear absolute-difference fallback algorithm strictly respects.
 CAM_MAX_RESOLUTION="1920x1080"
 CAM_MAX_FPS="30"
 
