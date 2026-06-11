@@ -1,14 +1,21 @@
+# Standalone Web Server Binding Configuration
 # (optional, if empty fallback to localhost)
 bind_address=0.0.0.0
 # (optional, if empty fallback to 8080)
 bind_port=8080
+
 # Frontend GUI user credential
 FF_GUI_USER=frontend
 FF_GUI_PASS=frontend
+
+# Target Backend Connection Parameters (Client API)
 # (connection to backend: optional, if empty set to localhost)
 backend_address=127.0.0.1
 # (connection to backend: optional, if empty set to 9090)
 backend_port=9090
+
+# Zero-Trust mTLS Credentials
+# Used by the Svelte Control Panel to authenticate against the backend API.
 # Client certificate path for frontend (optional, required if backend enforces mTLS)
 client_crt=/opt/VLX_FrameFlow/certs/frontend01.crt
 # Client key path for frontend (optional, required if backend enforces mTLS)

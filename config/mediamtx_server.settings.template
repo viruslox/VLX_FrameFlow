@@ -1,5 +1,7 @@
 ###############################################
-# VLX FrameFlow - MediaMTX Configuration Template (Client)
+# VLX FrameFlow - MediaMTX Configuration Template (Server)
+# Note: This node operates inside a System-Space Systemd unit (/etc/systemd/system/).
+# Privilege Dropping (User=, Group=) is enforced inside the generated unit to limit blast radius.
 ###############################################
 logLevel: info
 logDestinations: [syslog]
@@ -86,5 +88,7 @@ pathDefaults:
   runOnRecordSegmentComplete:
 
 paths:
+  # The Server acts as a "Smart Receiver" and implements a Seamless Fallback Pipeline (Zero-Drop)
+  # by maintaining an ffmpeg -stream_loop on an /offline path (not shown here) during dropouts.
   ~^wificam:
   ~^cameraman:

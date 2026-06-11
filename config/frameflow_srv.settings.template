@@ -1,9 +1,17 @@
 # VLX FrameFlow Server Profile
+# The dedicated, unprivileged user that runs background services inside privilege-dropped systemd units.
 FRAMEFLOW_USER="frameflow"
+
+# Installation Paths
+# Paths dynamically resolved via os.Getenv("VLXsuite_DIR") in code, defaulting to:
 VLXsuite_DIR="/opt/VLX_FrameFlow"
+# Note: Architecture suffixes (e.g. AMD64 vs ARM64) for MediaMTX are handled automatically
+# by the daemon's runtime.GOARCH resolution and do not need to be appended here.
 MEDIAMTX_DIR="/opt/mediamtx"
 
 # Network settings
+# Explicitly sets the system to require root execution for main orchestrator daemons,
+# while utilizing /etc/systemd/system/ and multi-user.target for unit files.
 FRAMEFLOW_ROLE="SERVER"
 MPTCP_PROXY_PASS=""
 MLVPN_KEY=""
