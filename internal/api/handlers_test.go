@@ -46,9 +46,9 @@ func TestHandleFrameFlowBonding(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()
-	router.GET("/api/frameflow/bonding", HandleBondingStatus)
+	router.POST("/api/frameflow/bonding/status", HandleBondingStatus)
 
-	req, _ := http.NewRequest(http.MethodGet, "/api/frameflow/bonding", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/api/frameflow/bonding/status", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -62,7 +62,7 @@ func TestAPI_FrameFlowBonding(t *testing.T) {
 	router := gin.New()
 	api.RegisterRoutes(router)
 
-	req, _ := http.NewRequest(http.MethodGet, "/api/frameflow/bonding", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/api/frameflow/bonding/status", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
