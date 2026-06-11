@@ -41,3 +41,12 @@ func ClientStatus() (string, error) {
 	out3, _ := sysutils.RunCommand(10*time.Second, "systemctl", "--user", "status", "frameflow-mlvpn.service", "--no-pager")
 	return out1 + "\n" + out3, nil
 }
+
+func ClientReset() error {
+	sysutils.Info("Resetting client components...")
+	if err := ClientStop(); err != nil {
+		sysutils.Warning("Issues during stop: %v", err)
+	}
+	time.Sleep(2 * time.Second)
+	return ClientStart()
+}
