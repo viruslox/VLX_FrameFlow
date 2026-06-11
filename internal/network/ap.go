@@ -13,6 +13,15 @@ import (
 func SystemAccesspointStart() error {
 	sysutils.Info("Starting Access Point...")
 
+	systemdNetDir := os.Getenv("SYSTEMD_NETWORK")
+	if systemdNetDir == "" {
+		systemdNetDir = "/etc/systemd/network"
+	}
+	apProfileDir := os.Getenv("AP_PROFILE")
+	if apProfileDir == "" {
+		apProfileDir = "/etc/systemd/network/profiles/ap-bonding"
+	}
+
 	wifiIf, err := GetFirstWifiInterface("/sys/class/net")
 	if err != nil || wifiIf == "" {
 		sysutils.Error("No wireless interface found to start AP.")
@@ -32,17 +41,17 @@ func SystemAccesspointStart() error {
 		return fmt.Errorf("failed to disable wpa_supplicant: %w, output: %s", err, out)
 	}
 
-	os.Remove(fmt.Sprintf("%s/20-%s-managed.network", func() string { if p := os.Getenv("SYSTEMD_NETWORK"); p != "" { return p } else { return "/etc/systemd/network" } }(), wifiIf))
+	os.Remove(fmt.Sprintf("%s/20-%s-managed.network", systemdNetDir, wifiIf))
 
-	if out, err := sysutils.RunCommand(10*time.Second, "cp", fmt.Sprintf("%s/40-%s-ap.network", func() string { if p := os.Getenv("AP_PROFILE"); p != "" { return p } else { return "/etc/systemd/network/profiles/ap-bonding" } }(), wifiIf), "/etc/systemd/network/"); err != nil {
+	if out, err := sysutils.RunCommand(10*time.Second, "cp", fmt.Sprintf("%s/40-%s-ap.network", apProfileDir, wifiIf), systemdNetDir+"/"); err != nil {
 		return fmt.Errorf("failed to cp network profile: %w, output: %s", err, out)
 	}
 
-	if out, err := sysutils.RunCommand(10*time.Second, "sudo", "systemctl", "restart", "systemd-networkd.service"); err != nil {
+	if out, err := sysutils.RunCommand(10*time.Second, "systemctl", "restart", "systemd-networkd.service"); err != nil {
 		return fmt.Errorf("failed to restart systemd-networkd: %w, output: %s", err, out)
 	}
 
-	if out, err := sysutils.RunCommand(10*time.Second, "sudo", "systemctl", "restart", "systemd-resolved.service"); err != nil {
+	if out, err := sysutils.RunCommand(10*time.Second, "systemctl", "restart", "systemd-resolved.service"); err != nil {
 		return fmt.Errorf("failed to restart systemd-resolved: %w, output: %s", err, out)
 	}
 
@@ -63,6 +72,11 @@ func SystemAccesspointStart() error {
 func SystemAccesspointStop() error {
 	sysutils.Info("Stopping Access Point...")
 
+	systemdNetDir := os.Getenv("SYSTEMD_NETWORK")
+	if systemdNetDir == "" {
+		systemdNetDir = "/etc/systemd/network"
+	}
+
 	wifiIf, err := GetFirstWifiInterface("/sys/class/net")
 	if err != nil || wifiIf == "" {
 		sysutils.Error("No wireless interface found to stop AP.")
@@ -79,16 +93,16 @@ func SystemAccesspointStop() error {
 		return fmt.Errorf("failed to mask hostapd: %w, output: %s", err, out)
 	}
 
-	os.Remove(fmt.Sprintf("/etc/systemd/network/40-%s-ap.network", wifiIf))
+	os.Remove(fmt.Sprintf("%s/40-%s-ap.network", systemdNetDir, wifiIf))
 	if out, err := sysutils.RunCommand(10*time.Second, "sh", "-c", "cp /etc/systemd/network/profiles/normal/*.network /etc/systemd/network/"); err != nil {
 		return fmt.Errorf("failed to cp managed network profile: %w, output: %s", err, out)
 	}
 
-	if out, err := sysutils.RunCommand(10*time.Second, "sudo", "systemctl", "restart", "systemd-networkd.service"); err != nil {
+	if out, err := sysutils.RunCommand(10*time.Second, "systemctl", "restart", "systemd-networkd.service"); err != nil {
 		return fmt.Errorf("failed to restart systemd-networkd: %w, output: %s", err, out)
 	}
 
-	if out, err := sysutils.RunCommand(10*time.Second, "sudo", "systemctl", "restart", "systemd-resolved.service"); err != nil {
+	if out, err := sysutils.RunCommand(10*time.Second, "systemctl", "restart", "systemd-resolved.service"); err != nil {
 		return fmt.Errorf("failed to restart systemd-resolved: %w, output: %s", err, out)
 	}
 
