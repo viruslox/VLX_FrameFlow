@@ -357,13 +357,15 @@ func AppendCameraID(srtURL, cameraID string) string {
 		if len(parts) >= 2 {
 			// Mutate strictly the path segment (index 1)
 			parts[1] = fmt.Sprintf("%s_%s", parts[1], cameraID)
-			q.Set("streamid", strings.Join(parts, ":"))
-			u.RawQuery = q.Encode()
-			// Prevent %3A URL-encoding of colons in the final SRT string
-			res := u.String()
-			res = strings.ReplaceAll(res, "%3A", ":")
-			return res
+		} else {
+			parts[0] = fmt.Sprintf("%s_%s", parts[0], cameraID)
 		}
+		q.Set("streamid", strings.Join(parts, ":"))
+		u.RawQuery = q.Encode()
+		// Prevent %3A URL-encoding of colons in the final SRT string
+		res := u.String()
+		res = strings.ReplaceAll(res, "%3A", ":")
+		return res
 	}
 
 	// Fallback logic if streamid is absent or parsing fails
@@ -445,7 +447,7 @@ func StartStream(cameraID string, hwType string, id int) error {
 
 		if formatName == "default" {
 			// Fallback if we couldn't parse formats
-			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -framerate 30 -video_size 1920x1080 -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, hwPath, AppendCameraID(srtURL, cameraID))
+			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
 		} else if strings.Contains(formatName, "h264") {
 			// Copy H264 stream natively
 			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format h264 -framerate %f -video_size %dx%d -i %s -c:v copy -f srt "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
