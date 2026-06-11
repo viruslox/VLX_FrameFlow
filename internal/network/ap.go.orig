@@ -120,13 +120,13 @@ func SystemAccesspointStop() error {
 	return nil
 }
 
-func SystemAccesspointStatus() string {
+func SystemAccesspointStatus() error {
 	sysutils.Info("Checking Access Point status...")
 
 	wifiIf, err := GetFirstWifiInterface("/sys/class/net")
 	if err != nil || wifiIf == "" {
 		sysutils.Error("No wireless interface found.")
-		return "inactive"
+		return fmt.Errorf("no wireless interface")
 	}
 
 	hostapdActive := false
@@ -143,11 +143,11 @@ func SystemAccesspointStatus() string {
 
 	if hostapdActive {
 		sysutils.Success("Access Point Mode: Enabled")
-		return "active"
 	} else {
 		sysutils.Success("Access Point Mode: Disabled (Managed Client)")
-		return "inactive"
 	}
+
+	return nil
 }
 
 func AccesspointStart() error {

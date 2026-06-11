@@ -87,10 +87,11 @@
   }
   .status-badge {
     display: inline-block;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 0.85rem;
+    text-transform: uppercase;
   }
   .btn-group {
     display: flex;
@@ -127,7 +128,9 @@
         <div class="module-header">
           <h3>{mod.name}</h3>
           {#if serviceStates[mod.id]}
-            <div class="status-badge" style="background-color: {serviceStates[mod.id].color === 'gray' ? '#555' : serviceStates[mod.id].color};" title="{serviceStates[mod.id].label}"></div>
+            <span class="status-badge" style="background-color: {serviceStates[mod.id].color === 'gray' ? '#555' : serviceStates[mod.id].color}; color: white;">
+              {serviceStates[mod.id].label}
+            </span>
           {/if}
         </div>
 

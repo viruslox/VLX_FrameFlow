@@ -9,22 +9,22 @@ export function formatBytes(bytes) {
 }
 
 export function parseServiceStatus(rawStatus) {
-    if (!rawStatus) return { state: 'unknown', color: 'orange', label: 'Unknown' };
+    if (!rawStatus) return { state: 'unknown', color: 'orange', label: '' };
 
     const cleanStatus = rawStatus.toString().trim().toLowerCase();
 
     switch (cleanStatus) {
         case 'active':
-            return { state: 'active', color: 'green', label: 'Online' };
+            return { state: 'active', color: 'green', label: '' };
         case 'inactive':
-            return { state: 'inactive', color: 'gray', label: 'Offline' };
+            return { state: 'inactive', color: 'gray', label: '' };
         case 'failed':
-            return { state: 'failed', color: 'orange', label: 'Error' };
+            return { state: 'failed', color: 'orange', label: '' };
         case 'activating':
         case 'deactivating':
         case 'reloading':
-            return { state: 'transitioning', color: 'yellow', label: 'Working...' };
+            return { state: 'transitioning', color: 'yellow', label: '' };
         default:
-            return { state: 'unknown', color: 'orange', label: cleanStatus };
+            return { state: 'unknown', color: 'orange', label: '' };
     }
 }

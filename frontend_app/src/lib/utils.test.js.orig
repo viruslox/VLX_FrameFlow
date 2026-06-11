@@ -61,28 +61,28 @@ describe('formatBytes', () => {
 
 describe('parseServiceStatus', () => {
   it('returns correct state for inactive/failed statuses', () => {
-    expect(parseServiceStatus('inactive')).toEqual({ state: 'inactive', color: 'gray', label: 'Offline' });
-    expect(parseServiceStatus('failed')).toEqual({ state: 'failed', color: 'orange', label: 'Error' });
+    expect(parseServiceStatus('inactive')).toEqual({ state: 'inactive', color: 'gray', label: '' });
+    expect(parseServiceStatus('failed')).toEqual({ state: 'failed', color: 'orange', label: '' });
   });
 
   it('returns correct state for active status', () => {
-    expect(parseServiceStatus('active')).toEqual({ state: 'active', color: 'green', label: 'Online' });
+    expect(parseServiceStatus('active')).toEqual({ state: 'active', color: 'green', label: '' });
   });
 
   it('returns correct state for transitioning statuses', () => {
-    expect(parseServiceStatus('activating')).toEqual({ state: 'transitioning', color: 'yellow', label: 'Working...' });
-    expect(parseServiceStatus('deactivating')).toEqual({ state: 'transitioning', color: 'yellow', label: 'Working...' });
-    expect(parseServiceStatus('reloading')).toEqual({ state: 'transitioning', color: 'yellow', label: 'Working...' });
+    expect(parseServiceStatus('activating')).toEqual({ state: 'transitioning', color: 'yellow', label: '' });
+    expect(parseServiceStatus('deactivating')).toEqual({ state: 'transitioning', color: 'yellow', label: '' });
+    expect(parseServiceStatus('reloading')).toEqual({ state: 'transitioning', color: 'yellow', label: '' });
   });
 
   it('returns unknown state for unknown string formats', () => {
-    expect(parseServiceStatus('Started successfully')).toEqual({ state: 'unknown', color: 'orange', label: 'started successfully' });
-    expect(parseServiceStatus('Some random output')).toEqual({ state: 'unknown', color: 'orange', label: 'some random output' });
+    expect(parseServiceStatus('Started successfully')).toEqual({ state: 'unknown', color: 'orange', label: '' });
+    expect(parseServiceStatus('Some random output')).toEqual({ state: 'unknown', color: 'orange', label: '' });
   });
 
   it('returns unknown state for empty/non-string inputs', () => {
-    expect(parseServiceStatus('')).toEqual({ state: 'unknown', color: 'orange', label: 'Unknown' });
-    expect(parseServiceStatus(null)).toEqual({ state: 'unknown', color: 'orange', label: 'Unknown' });
-    expect(parseServiceStatus(undefined)).toEqual({ state: 'unknown', color: 'orange', label: 'Unknown' });
+    expect(parseServiceStatus('')).toEqual({ state: 'unknown', color: 'orange', label: '' });
+    expect(parseServiceStatus(null)).toEqual({ state: 'unknown', color: 'orange', label: '' });
+    expect(parseServiceStatus(undefined)).toEqual({ state: 'unknown', color: 'orange', label: '' });
   });
 });
