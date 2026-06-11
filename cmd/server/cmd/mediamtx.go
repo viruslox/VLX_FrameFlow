@@ -9,10 +9,15 @@ import (
 )
 
 var mediamtxCmd = &cobra.Command{
-	Use:   "mediamtx <start|stop|status|install>",
+	Use:   "mediamtx <start|stop|status|install|uninstall>",
 	Short: "Manages the local MediaMTX server",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if os.Geteuid() != 0 {
+			fmt.Println("Error: mediamtx server commands modify system-level services and must be run as root or via sudo.")
+			os.Exit(1)
+		}
+
 		action := args[0]
 
 		switch action {
@@ -48,8 +53,15 @@ var mediamtxCmd = &cobra.Command{
 				os.Exit(1)
 			}
 
+		case "uninstall":
+			err := mediamtx.Uninstall()
+			if err != nil {
+				fmt.Printf("MediaMTX uninstall error: %v\n", err)
+				os.Exit(1)
+			}
+
 		default:
-			fmt.Printf("Unknown action: %s. Use start, stop, status, or install.\n", action)
+			fmt.Printf("Unknown action: %s. Use start, stop, status, install, or uninstall.\n", action)
 			os.Exit(1)
 		}
 	},
