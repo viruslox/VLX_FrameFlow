@@ -80,7 +80,9 @@ func init() {
 				// We don't want to block init, so run in a goroutine
 				go func(camID, hwType string) {
 					parsedID, _ := strconv.Atoi(strings.TrimPrefix(camID, hwType))
-					StartStream(camID, hwType, parsedID)
+					if err := StartStream(camID, hwType, parsedID); err != nil {
+						fmt.Printf("[Cameraman Boot] Auto-start failed %s: %v\n", camID, err)
+					}
 				}(id, deviceType)
 			}
 		}
