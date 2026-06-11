@@ -9,13 +9,13 @@ import (
 )
 
 var mediamtxCmd = &cobra.Command{
-	Use:   "mediamtx <start|stop|status|install>",
+	Use:   "mediamtx <start|stop|status|install|uninstall>",
 	Short: "Manages the local MediaMTX server",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		action := args[0]
 
-		if os.Geteuid() == 0 && action != "install" {
+		if os.Geteuid() == 0 && action != "install" && action != "uninstall" {
 			fmt.Println("Error: mediamtx command must not be run as root. Please run as the dedicated user or via the vlx_frameflow alias without sudo.")
 			os.Exit(1)
 		}
@@ -53,8 +53,15 @@ var mediamtxCmd = &cobra.Command{
 				os.Exit(1)
 			}
 
+		case "uninstall":
+			err := mediamtx.Uninstall()
+			if err != nil {
+				fmt.Printf("MediaMTX uninstall error: %v\n", err)
+				os.Exit(1)
+			}
+
 		default:
-			fmt.Printf("Unknown action: %s. Use start, stop, status, or install.\n", action)
+			fmt.Printf("Unknown action: %s. Use start, stop, status, install, or uninstall.\n", action)
 			os.Exit(1)
 		}
 	},
