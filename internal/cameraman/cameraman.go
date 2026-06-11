@@ -223,18 +223,15 @@ func parseFfmpegFormats(out string) []FormatCapability {
 	return caps
 }
 
-func DetermineBestFormat(v4l2Caps, ffmpegCaps []FormatCapability) FormatCapability {
+func DetermineBestFormat(v4l2Caps, ffmpegCaps []FormatCapability, maxResWidth, maxResHeight int, maxFPS float64) FormatCapability {
 	var caps []FormatCapability
 	if len(v4l2Caps) > 0 {
 		caps = v4l2Caps
 	} else if len(ffmpegCaps) > 0 {
 		caps = ffmpegCaps
 	} else {
-		return FormatCapability{Format: "default", Width: 1920, Height: 1080, FPS: 30}
+		return FormatCapability{Format: "default", Width: maxResWidth, Height: maxResHeight, FPS: maxFPS}
 	}
-
-	bestScore := -1
-	bestCap := FormatCapability{}
 
 	formatScore := func(f string) int {
 		f = strings.ToLower(f)
@@ -247,11 +244,34 @@ func DetermineBestFormat(v4l2Caps, ffmpegCaps []FormatCapability) FormatCapabili
 		return 10
 	}
 
+	bestScore := -1.0
+	var bestCap FormatCapability
+	foundMatch := false
+
 	for _, cap := range caps {
-		score := formatScore(cap.Format)*10000 + cap.Width*cap.Height
+		if cap.Width > maxResWidth || cap.Height > maxResHeight || cap.FPS > maxFPS {
+			continue
+		}
+
+		score := float64(formatScore(cap.Format)*10000 + cap.Width*cap.Height)
 		if score > bestScore {
 			bestScore = score
 			bestCap = cap
+			foundMatch = true
+		}
+	}
+
+	// If all caps exceed the user limit, pick the one closest to the limit
+	if !foundMatch {
+		minDiff := 1e12
+		for _, cap := range caps {
+			diff := float64((cap.Width-maxResWidth)*(cap.Width-maxResWidth) + (cap.Height-maxResHeight)*(cap.Height-maxResHeight))
+			diffScore := diff - float64(formatScore(cap.Format)*1000)
+
+			if diffScore < minDiff {
+				minDiff = diffScore
+				bestCap = cap
+			}
 		}
 	}
 
@@ -335,12 +355,41 @@ func AppendCameraID(srtURL, cameraID string) string {
 	return fmt.Sprintf("%s_%s", srtURL, cameraID)
 }
 
+func parseResolution(res string) (int, int) {
+	if res == "" {
+		return 1920, 1080
+	}
+	parts := strings.Split(res, "x")
+	if len(parts) == 2 {
+		w, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
+		h, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if w > 0 && h > 0 {
+			return w, h
+		}
+	}
+	return 1920, 1080
+}
+
+func parseFPS(fpsStr string) float64 {
+	if fpsStr == "" {
+		return 30.0
+	}
+	fps, err := strconv.ParseFloat(strings.TrimSpace(fpsStr), 64)
+	if err != nil || fps <= 0 {
+		return 30.0
+	}
+	return fps
+}
+
 func StartStream(cameraID string, hwType string, id int) error {
 	settings := LoadSettings()
 	srtURL := settings["SRT_URL"]
 	if srtURL == "" {
 		srtURL = os.Getenv("SRT_URL")
 	}
+
+	maxResWidth, maxResHeight := parseResolution(settings["CAM_MAX_RESOLUTION"])
+	maxFPS := parseFPS(settings["CAM_MAX_FPS"])
 
 	// Dynamic URLs
 	srtURL = PrepareStreamURL(srtURL)
@@ -361,11 +410,11 @@ func StartStream(cameraID string, hwType string, id int) error {
 
 		v4l2Caps := GetDeviceCapabilitiesV4L2(hwPath)
 		ffmpegCaps := GetDeviceCapabilitiesFFmpeg(hwPath)
-		bestFormat := DetermineBestFormat(v4l2Caps, ffmpegCaps)
+		bestFormat := DetermineBestFormat(v4l2Caps, ffmpegCaps, maxResWidth, maxResHeight, maxFPS)
 
 		fps := bestFormat.FPS
 		if fps == 0 {
-			fps = 30
+			fps = maxFPS
 		}
 
 		ffmpegStr := ""
