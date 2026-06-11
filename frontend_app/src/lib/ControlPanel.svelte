@@ -9,14 +9,86 @@
   const modules = [
     { id: 'client', name: "Network Client", endpoints: { start: "/api/frameflow/client/start", stop: "/api/frameflow/client/stop", status: "/api/frameflow/client/status", reset: "/api/frameflow/client/reset" } },
     { id: 'ap', name: "Access Point", endpoints: { start: "/api/frameflow/ap/start", stop: "/api/frameflow/ap/stop", status: "/api/frameflow/ap/status" } },
-    { id: 'bonding', name: "Bonding MPTCP", endpoints: { start: "/api/frameflow/bonding/start", stop: "/api/frameflow/bonding/stop", status: "/api/frameflow/bonding/status" } },
+    { id: 'bonding', name: "Bonding", endpoints: { start: "/api/frameflow/bonding/start", stop: "/api/frameflow/bonding/stop", status: "/api/frameflow/bonding/status" } },
     { id: 'gps', name: "GPS Tracking", endpoints: { start: "/api/gps/start", stop: "/api/gps/stop", status: "/api/gps/status" } },
     { id: 'mediamtx', name: "MediaMTX Core", endpoints: { start: "/api/mediamtx/start", stop: "/api/mediamtx/stop", status: "/api/mediamtx/status" } },
-    { id: 'cameraman', name: "Cameraman", endpoints: { start: "/api/cameraman/start", stop: "/api/cameraman/stop", status: "/api/cameraman/status" } },
+    { id: 'cameraman', name: "Cameraman", endpoints: { start: "/api/cameraman/start", stop: "/api/cameraman/stop", status: "/api/cameraman/status", listDev: "/api/cameraman/list-dev" } },
   ];
 
   let serviceStates = {};
+  let rawStates = {};
   let pollingInterval;
+
+  let availableDevices = [];
+  let selectedDevice = "";
+
+  const fetchDevList = async () => {
+    try {
+      const res = await fetch("/api/cameraman/list-dev", { method: "POST" });
+      const data = await res.json();
+      const output = data.output || "";
+
+      const vIds = [];
+      const aIds = [];
+
+      const lines = output.split('\n');
+      let parsingVideo = false;
+      let parsingAudio = false;
+
+      for (const line of lines) {
+        if (line.includes('[VIDEO DEVICES]')) {
+          parsingVideo = true;
+          parsingAudio = false;
+          continue;
+        }
+        if (line.includes('[AUDIO DEVICES]')) {
+          parsingVideo = false;
+          parsingAudio = true;
+          continue;
+        }
+
+        if (parsingVideo) {
+          const match = line.match(/^\s*(V\d+)\s*\|/);
+          if (match) vIds.push(match[1]);
+        }
+        if (parsingAudio) {
+          const match = line.match(/^\s*(A\d+)\s*\|/);
+          if (match) aIds.push(match[1]);
+        }
+      }
+
+      const combos = [];
+      if (vIds.length === 0) vIds.push("V0");
+      if (aIds.length === 0) aIds.push("A0");
+
+      for (const v of vIds) {
+        for (const a of aIds) {
+          combos.push(`${v}${a}`);
+        }
+      }
+
+      availableDevices = combos;
+      if (combos.length > 0 && !selectedDevice) {
+        selectedDevice = combos[0];
+      }
+    } catch (err) {
+      console.error("Failed to fetch devlist", err);
+      availableDevices = ["V0A0"];
+      if (!selectedDevice) selectedDevice = "V0A0";
+    }
+  };
+
+  const logDevList = async () => {
+    try {
+      logToConsole(`[Cameraman] Fetching Devlist...`);
+      const res = await fetch("/api/cameraman/list-dev", { method: "POST" });
+      const data = await res.json();
+      logToConsole(`[Cameraman] Devlist:\n${data.output}`);
+      fetchDevList(); // refresh dropdown too
+    } catch (err) {
+      logToConsole(`[Cameraman] Failed to fetch devlist: ${err.message}`, true);
+    }
+  };
 
   const fetchStatuses = async () => {
     try {
@@ -25,20 +97,28 @@
       );
 
       let newStates = {};
+      let newRawStates = {};
       results.forEach((res, index) => {
         const modId = modules[index].id;
         newStates[modId] = parseServiceStatus(res.status || 'unknown');
+        newRawStates[modId] = res.status || 'unknown';
       });
       serviceStates = newStates;
+      rawStates = newRawStates;
     } catch (err) {
       console.error("Polling failed", err);
     }
   };
 
-  const execCommand = async (moduleName, endpoint, actionName) => {
+  const execCommand = async (moduleName, endpoint, actionName, payload = null) => {
     try {
       logToConsole(`[${moduleName}] Initiating ${actionName}...`);
-      const res = await fetch(endpoint, { method: "POST" });
+      const options = { method: "POST" };
+      if (payload) {
+        options.headers = { "Content-Type": "application/json" };
+        options.body = JSON.stringify(payload);
+      }
+      const res = await fetch(endpoint, options);
       const data = await res.json();
       logToConsole(`[${moduleName}] Success: ${data.status || 'Done'}`);
       fetchStatuses();
@@ -55,6 +135,7 @@
 
   onMount(() => {
     fetchStatuses();
+    fetchDevList();
     pollingInterval = setInterval(fetchStatuses, 5000);
   });
 
@@ -107,6 +188,13 @@
     transition: background 0.2s;
   }
   button:hover { background: #5a5a8a; }
+  select {
+    background: #2a2a4a;
+    color: white;
+    border: 1px solid #4a4a6a;
+    padding: 0.5rem;
+    border-radius: 4px;
+  }
   .console-box {
     background: #000;
     color: #ddd;
@@ -117,6 +205,17 @@
     border-radius: 8px;
     margin-top: 2rem;
   }
+  .lcd-display {
+    background: #111;
+    color: #0f0;
+    font-family: monospace;
+    padding: 1rem;
+    border-radius: 4px;
+    border: 2px solid #333;
+    margin-bottom: 1rem;
+    white-space: pre-wrap;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+  }
 </style>
 
 <div>
@@ -126,14 +225,36 @@
       <div class="module-card">
         <div class="module-header">
           <h3>{mod.name}</h3>
-          {#if serviceStates[mod.id]}
+          {#if serviceStates[mod.id] && mod.id !== 'bonding'}
             <div class="status-badge" style="background-color: {serviceStates[mod.id].color === 'gray' ? '#555' : serviceStates[mod.id].color};" title="{serviceStates[mod.id].label}"></div>
           {/if}
         </div>
 
+        {#if mod.id === 'bonding' && rawStates[mod.id]}
+          <div class="lcd-display">
+            {@html ansiConvert.toHtml(rawStates[mod.id].split('\n').filter(line => line.includes('MPTCP Proxy') || line.includes('MLVPN Tunnel')).join('\n'))}
+          </div>
+        {/if}
+
         <div class="btn-group">
-          <button on:click={() => execCommand(mod.name, mod.endpoints.start, 'Start')}>Start</button>
-          <button on:click={() => execCommand(mod.name, mod.endpoints.stop, 'Stop')}>Stop</button>
+          {#if mod.id === 'cameraman'}
+            <select bind:value={selectedDevice}>
+              {#each availableDevices as dev}
+                <option value={dev}>{dev}</option>
+              {/each}
+            </select>
+          {/if}
+
+          {#if mod.id !== 'bonding'}
+            <button on:click={() => execCommand(mod.name, mod.endpoints.start, 'Start', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Start</button>
+            <button on:click={() => execCommand(mod.name, mod.endpoints.stop, 'Stop', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Stop</button>
+          {/if}
+          {#if mod.id !== 'bonding'}
+            <button on:click={() => execCommand(mod.name, mod.endpoints.status, 'Status', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Status</button>
+          {/if}
+          {#if mod.id === 'cameraman'}
+            <button on:click={logDevList}>Devlist</button>
+          {/if}
           {#if mod.endpoints.reset}
             <button on:click={() => execCommand(mod.name, mod.endpoints.reset, 'Reset')}>Reset</button>
           {/if}
