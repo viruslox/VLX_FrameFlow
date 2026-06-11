@@ -56,11 +56,7 @@ var gpsCmd = &cobra.Command{
 			fmt.Println("GPS Tracker stopped successfully.")
 
 		case "status":
-			out, err := gps.StatusGPSD()
-			if err != nil {
-				fmt.Printf("Error checking status for GPS Tracker: %v\n", err)
-				os.Exit(1)
-			}
+			out := gps.StatusGPSD()
 			fmt.Println(out)
 
 		case "sender":

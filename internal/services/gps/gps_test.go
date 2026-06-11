@@ -205,10 +205,7 @@ func TestStopGPSD(t *testing.T) {
 }
 
 func TestStatusGPSD(t *testing.T) {
-	status, err := StatusGPSD()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	status := StatusGPSD()
 	if len(status) == 0 {
 		t.Errorf("expected status output, got empty")
 	}
