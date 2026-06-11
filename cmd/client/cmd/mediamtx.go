@@ -15,8 +15,8 @@ var mediamtxCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		action := args[0]
 
-		if os.Geteuid() == 0 && action != "install" && action != "uninstall" {
-			fmt.Println("Error: mediamtx command must not be run as root. Please run as the dedicated user or via the vlx_frameflow alias without sudo.")
+		if os.Geteuid() == 0 {
+			fmt.Println("Error: mediamtx commands must be run as the dedicated user, not root.")
 			os.Exit(1)
 		}
 
