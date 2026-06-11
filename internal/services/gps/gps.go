@@ -127,9 +127,12 @@ func StopGPSD() error {
 	return nil
 }
 
-func StatusGPSD() (string, error) {
-	outD, _ := sysutils.RunCommand(10*time.Second, "systemctl", "--user", "status", "frameflow-gpsd", "--no-pager")
-	return fmt.Sprintf("--- GPSD Service ---\n%s", outD), nil
+func StatusGPSD() string {
+	out, err := sysutils.RunCommand(5*time.Second, "systemctl", "--user", "is-active", "frameflow-gpsd.service")
+	if err != nil {
+		return "inactive"
+	}
+	return strings.TrimSpace(out)
 }
 
 type TPVReport struct {

@@ -370,7 +370,7 @@ func Stop() error {
 }
 
 // Status shows the status of MediaMTX service
-func Status() error {
+func Status() string {
 	loadEnv()
 	unitName := "frameflow-mediamtx.service"
 
@@ -393,9 +393,8 @@ func Status() error {
 		runCommandWithEnv(10*time.Second, userEnv, systemctlArgs[0], append(systemctlArgs[1:], "kill", unitName)...)
 	}
 
-	out, err := runCommandWithEnv(10*time.Second, userEnv, systemctlArgs[0], append(systemctlArgs[1:], "status", unitName, "--no-pager")...)
-	fmt.Print(out)
-	return err
+	out, _ := runCommandWithEnv(10*time.Second, userEnv, systemctlArgs[0], append(systemctlArgs[1:], "status", unitName, "--no-pager")...)
+	return out
 }
 
 func getInstalledUser() string {

@@ -278,9 +278,9 @@ func TestStatusMediaMTX(t *testing.T) {
 		return "", fmt.Errorf("unexpected command: %s", cmdStr)
 	}
 
-	err := Status()
-	if err != nil {
-		t.Errorf("Expected nil error, got %v", err)
+	out := Status()
+	if out == "" {
+		t.Errorf("Expected status string, got empty")
 	}
 }
 

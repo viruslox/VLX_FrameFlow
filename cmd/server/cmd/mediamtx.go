@@ -40,11 +40,8 @@ var mediamtxCmd = &cobra.Command{
 			fmt.Println("MediaMTX server stopped successfully.")
 
 		case "status":
-			err := mediamtx.Status()
-			if err != nil {
-				fmt.Printf("MediaMTX status: %v\n", err)
-				os.Exit(1)
-			}
+			out := mediamtx.Status()
+			fmt.Println(out)
 
 		case "install":
 			err := mediamtx.Install()
