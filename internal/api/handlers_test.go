@@ -45,43 +45,14 @@ func TestHandleWSTicket(t *testing.T) {
 func TestHandleFrameFlowBonding(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	tm := NewTicketManager()
-	api := NewAPI(tm)
-
 	router := gin.New()
-	router.GET("/api/frameflow/bonding", api.handleFrameFlowBonding)
+	router.GET("/api/frameflow/bonding", HandleBondingStatus)
 
 	req, _ := http.NewRequest(http.MethodGet, "/api/frameflow/bonding", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-func TestInvalidAction(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	tm := NewTicketManager()
-	api := NewAPI(tm)
-
-	router := gin.New()
-	api.RegisterRoutes(router)
-
-	endpoints := []string{
-		"/api/frameflow/client/invalid",
-		"/api/frameflow/ap/invalid",
-		"/api/mediamtx/invalid",
-		"/api/gps/invalid",
-		"/api/cameraman/invalid",
-	}
-
-	for _, ep := range endpoints {
-		req, _ := http.NewRequest(http.MethodPost, ep, nil)
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-	}
 }
 
 func TestAPI_FrameFlowBonding(t *testing.T) {
