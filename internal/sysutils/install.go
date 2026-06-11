@@ -320,7 +320,7 @@ func InstallBinary(isServer bool) error {
 	// We'll execute the mediamtx install function if we refactor it, but for now we'll do:
 	// A new package might be needed, or we just invoke the command line.
 	// Since mediamtx install can be called from client option 8, we can call it from here by running the currently running executable using cobra commands.
-	_, err = RunCommand(10*time.Minute, targetPath, "mediamtx", "install")
+	_, err = RunCommand(10*time.Minute, "sudo", "-u", selectedUser, targetPath, "mediamtx", "install")
 	if err != nil {
 		Info("Warning: Failed to run mediamtx setup via CLI: %v", err)
 	}
