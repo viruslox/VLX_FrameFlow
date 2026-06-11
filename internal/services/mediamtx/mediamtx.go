@@ -86,6 +86,13 @@ func Install() error {
 			sysutils.Error("Failed to upgrade MediaMTX: %v", cmdErr)
 			return cmdErr
 		}
+
+		if os.Getenv("FRAMEFLOW_ROLE") == "SERVER" {
+			user := getInstalledUser()
+			runCommand(10*time.Second, "chown", "-R", fmt.Sprintf("%s:%s", user, user), mediaMtxDir)
+		}
+		runCommandWithEnv(10*time.Second, nil, "chmod", "700", mediaMtxPath)
+
 		sysutils.Success("MediaMTX ready.")
 		return nil
 	}
