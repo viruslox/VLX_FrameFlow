@@ -81,10 +81,10 @@ func Install() error {
 
 	mediaMtxPath := filepath.Join(mediaMtxDir, "mediamtx")
 	if _, err := os.Stat(mediaMtxPath); err == nil {
+		sysutils.Info("Checking MediaMTX...")
 		_, cmdErr := runCommandWithEnv(10*time.Minute, nil, mediaMtxPath, "--upgrade")
 		if cmdErr != nil {
-			sysutils.Error("Failed to upgrade MediaMTX: %v", cmdErr)
-			return cmdErr
+			sysutils.Warning("MediaMTX upgrade skipped or failed (likely legacy permission restrictions): %v", cmdErr)
 		}
 
 		if os.Getenv("FRAMEFLOW_ROLE") == "SERVER" {
@@ -92,6 +92,17 @@ func Install() error {
 			runCommand(10*time.Second, "chown", "-R", fmt.Sprintf("%s:%s", user, user), mediaMtxDir)
 		}
 		runCommandWithEnv(10*time.Second, nil, "chmod", "700", mediaMtxPath)
+
+		// --- CRITICAL FIX: Generate config and service even on upgrade ---
+		if err := GenerateConfig(); err != nil {
+			sysutils.Error("Failed to generate MediaMTX config: %v", err)
+			return err
+		}
+
+		if err := GenerateService(); err != nil {
+			sysutils.Error("Failed to generate MediaMTX service: %v", err)
+			return err
+		}
 
 		sysutils.Success("MediaMTX ready.")
 		return nil
