@@ -111,8 +111,10 @@ var apSystemOpsCmd = &cobra.Command{
 				os.Exit(1)
 			}
 		case "status":
-			status := network.SystemAccesspointStatus()
-			fmt.Println(status)
+			if err := network.SystemAccesspointStatus(); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
 		}
 	},
 }
