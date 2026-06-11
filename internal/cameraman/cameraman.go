@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,7 +46,14 @@ func init() {
 		fmt.Printf("Failed to create database directory: %v\n", err)
 	}
 
-	db, err = sql.Open("sqlite", dsn)
+	dbDSN := dsn
+	if strings.Contains(dbDSN, "?") {
+		dbDSN += "&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	} else {
+		dbDSN += "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	}
+
+	db, err = sql.Open("sqlite", dbDSN)
 	if err != nil {
 		fmt.Printf("Failed to open database: %v\n", err)
 		return
@@ -97,9 +106,9 @@ func GetVideoDevice(vidID int) (string, error) {
 	for _, line := range lines {
 		// New device group starts without leading space/tab
 		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' {
-			isValid = true
-			if ignoreRegex.MatchString(line) {
-				isValid = false
+			isValid = false
+			if !ignoreRegex.MatchString(line) {
+				isValid = true
 			}
 			continue
 		}
@@ -265,7 +274,7 @@ func DetermineBestFormat(v4l2Caps, ffmpegCaps []FormatCapability, maxResWidth, m
 	if !foundMatch {
 		minDiff := 1e12
 		for _, cap := range caps {
-			diff := float64((cap.Width-maxResWidth)*(cap.Width-maxResWidth) + (cap.Height-maxResHeight)*(cap.Height-maxResHeight))
+				diff := math.Abs(float64(cap.Width-maxResWidth)) + math.Abs(float64(cap.Height-maxResHeight))
 			diffScore := diff - float64(formatScore(cap.Format)*1000)
 
 			if diffScore < minDiff {
@@ -339,20 +348,32 @@ func AppendCameraID(srtURL, cameraID string) string {
 
 	q := u.Query()
 	streamid := q.Get("streamid")
+
+	// Handle streamid logic
 	if streamid != "" {
 		parts := strings.Split(streamid, ":")
 		if len(parts) >= 2 {
+			// Mutate strictly the path segment (index 1)
 			parts[1] = fmt.Sprintf("%s_%s", parts[1], cameraID)
 			q.Set("streamid", strings.Join(parts, ":"))
 			u.RawQuery = q.Encode()
-			// To match expected format strictly, prevent encoding `:` to `%3A`
+			// Prevent %3A URL-encoding of colons in the final SRT string
 			res := u.String()
 			res = strings.ReplaceAll(res, "%3A", ":")
 			return res
 		}
 	}
 
-	return fmt.Sprintf("%s_%s", srtURL, cameraID)
+	// Fallback logic if streamid is absent or parsing fails
+	if u.Path != "" {
+		u.Path = fmt.Sprintf("%s_%s", u.Path, cameraID)
+	} else {
+		u.Path = fmt.Sprintf("/_%s", cameraID)
+	}
+
+	res := u.String()
+	res = strings.ReplaceAll(res, "%3A", ":")
+	return res
 }
 
 func parseResolution(res string) (int, int) {
@@ -467,7 +488,10 @@ func StartStream(cameraID string, hwType string, id int) error {
 	if err != nil {
 		return fmt.Errorf("Failed to configure MediaMTX API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("MediaMTX API returned status: %d", resp.StatusCode)
@@ -497,7 +521,10 @@ func StopStream(cameraID string) error {
 	if err != nil {
 		return fmt.Errorf("Failed to delete from MediaMTX API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("MediaMTX API returned status: %d", resp.StatusCode)
@@ -536,7 +563,10 @@ func StatusStream(cameraID string) (string, error) {
 	if err != nil {
 		return fmt.Sprintf("● %s - API: not found, DB: %s", cameraID, status), nil
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Sprintf("● %s - API: not found, DB: %s", cameraID, status), nil
@@ -588,9 +618,9 @@ func ListDevices() (string, error) {
 		printedPath := false
 		for _, line := range lines {
 			if len(line) > 0 && line[0] != ' ' && line[0] != '\t' {
-				isValid = true
-				if ignoreRegex.MatchString(line) {
-					isValid = false
+				isValid = false
+				if !ignoreRegex.MatchString(line) {
+					isValid = true
 				}
 				if isValid {
 					desc = strings.TrimSpace(line)
