@@ -55,7 +55,9 @@ func (a *API) RegisterRoutes(r *gin.Engine) {
 		frameflow.POST("/ap/status", HandleAPStatus)
 
 		// Bonding
-		frameflow.GET("/bonding", HandleBondingStatus)
+		frameflow.POST("/bonding/start", HandleBondingStart)
+		frameflow.POST("/bonding/stop", HandleBondingStop)
+		frameflow.POST("/bonding/status", HandleBondingStatus)
 	}
 
 	// Group: /api/cameraman

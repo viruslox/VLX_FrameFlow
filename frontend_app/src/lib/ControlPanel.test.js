@@ -17,7 +17,7 @@ describe('ControlPanel', () => {
     render(ControlPanel);
 
     await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith('/api/v1/client/status');
+        expect(global.fetch).toHaveBeenCalledWith('/api/frameflow/client/status', { method: "POST" });
     });
 
     global.fetch.mockRejectedValue(new Error('Start client network error'));

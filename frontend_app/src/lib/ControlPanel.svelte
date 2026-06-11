@@ -7,12 +7,12 @@
   let consoleOutput = "";
 
   const modules = [
-    { id: 'client', name: "Network Client", endpoints: { start: "/api/v1/client/start", stop: "/api/v1/client/stop", status: "/api/v1/client/status", reset: "/api/v1/client/reset" } },
-    { id: 'ap', name: "Access Point", endpoints: { start: "/api/v1/ap/start", stop: "/api/v1/ap/stop", status: "/api/v1/ap/status" } },
-    { id: 'bonding', name: "Bonding MPTCP", endpoints: { start: "/api/v1/bonding/start", stop: "/api/v1/bonding/stop", status: "/api/v1/bonding/status" } },
-    { id: 'gps', name: "GPS Tracking", endpoints: { start: "/api/v1/gps/start", stop: "/api/v1/gps/stop", status: "/api/v1/gps/status" } },
-    { id: 'mediamtx', name: "MediaMTX Core", endpoints: { start: "/api/v1/mediamtx/start", stop: "/api/v1/mediamtx/stop", status: "/api/v1/mediamtx/status" } },
-    { id: 'cameraman', name: "Cameraman", endpoints: { start: "/api/v1/stream/start", stop: "/api/v1/stream/stop", status: "/api/v1/stream/status" } },
+    { id: 'client', name: "Network Client", endpoints: { start: "/api/frameflow/client/start", stop: "/api/frameflow/client/stop", status: "/api/frameflow/client/status", reset: "/api/frameflow/client/reset" } },
+    { id: 'ap', name: "Access Point", endpoints: { start: "/api/frameflow/ap/start", stop: "/api/frameflow/ap/stop", status: "/api/frameflow/ap/status" } },
+    { id: 'bonding', name: "Bonding MPTCP", endpoints: { start: "/api/frameflow/bonding/start", stop: "/api/frameflow/bonding/stop", status: "/api/frameflow/bonding/status" } },
+    { id: 'gps', name: "GPS Tracking", endpoints: { start: "/api/gps/start", stop: "/api/gps/stop", status: "/api/gps/status" } },
+    { id: 'mediamtx', name: "MediaMTX Core", endpoints: { start: "/api/mediamtx/start", stop: "/api/mediamtx/stop", status: "/api/mediamtx/status" } },
+    { id: 'cameraman', name: "Cameraman", endpoints: { start: "/api/cameraman/start", stop: "/api/cameraman/stop", status: "/api/cameraman/status" } },
   ];
 
   let serviceStates = {};
@@ -21,7 +21,7 @@
   const fetchStatuses = async () => {
     try {
       const results = await Promise.all(
-        modules.map(m => fetch(m.endpoints.status).then(res => res.json()).catch(() => ({ status: 'error' })))
+        modules.map(m => fetch(m.endpoints.status, { method: "POST" }).then(res => res.json()).catch(() => ({ status: 'error' })))
       );
 
       let newStates = {};
