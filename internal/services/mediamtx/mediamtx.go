@@ -41,6 +41,27 @@ func loadEnv() {
 	}
 }
 
+func getUserEnv() []string {
+	uid := os.Getuid()
+	if uid == 0 {
+		sudoUser := os.Getenv("SUDO_USER")
+		if sudoUser != "" {
+			out, err := runCommandWithEnv(10*time.Second, nil, "id", "-u", sudoUser)
+			if err == nil {
+				uidStr := strings.TrimSpace(out)
+				return []string{
+					fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%s", uidStr),
+					fmt.Sprintf("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus", uidStr),
+				}
+			}
+		}
+	}
+	return []string{
+		fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid),
+		fmt.Sprintf("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%d/bus", uid),
+	}
+}
+
 // Install checks if MediaMTX is installed, and if not, downloads and installs it.
 func Install() error {
 	loadEnv()
@@ -169,66 +190,101 @@ func Install() error {
 		return fmt.Errorf("download failed or checksum not found")
 	}
 
+	err = GenerateService()
+	if err != nil {
+		return err
+	}
+
+	sysutils.Info("Enabling and starting MediaMTX service...")
+	userEnv := getUserEnv()
+	_, err = runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "daemon-reload")
+	if err != nil {
+		sysutils.Error("Failed to reload systemd user daemon: %v", err)
+	}
+
+	_, err = runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "enable", "frameflow-mediamtx.service")
+	if err != nil {
+		sysutils.Error("Failed to enable MediaMTX service: %v", err)
+	}
+
 	sysutils.Success("MediaMTX ready.")
 	return nil
 }
 
-// Start starts the MediaMTX service via systemd-run
+// Uninstall removes the static MediaMTX service
+func Uninstall() error {
+	sysutils.Info("Uninstalling MediaMTX service...")
+	userEnv := getUserEnv()
+
+	_, err := runCommandWithEnv(30*time.Second, userEnv, "systemctl", "--user", "stop", "frameflow-mediamtx.service")
+	if err != nil {
+		sysutils.Info("Note: Failed to stop service (it may not be running).")
+	}
+
+	_, err = runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "disable", "frameflow-mediamtx.service")
+	if err != nil {
+		sysutils.Info("Note: Failed to disable service.")
+	}
+
+	serviceDir := os.Getenv("TEST_SERVICE_DIR")
+	if serviceDir == "" {
+		home, errHome := os.UserHomeDir()
+		if errHome != nil {
+			sysutils.Error("Failed to get user home directory: %v", errHome)
+			return errHome
+		}
+		serviceDir = filepath.Join(home, ".config", "systemd", "user")
+	}
+	servicePath := filepath.Join(serviceDir, "frameflow-mediamtx.service")
+	err = os.Remove(servicePath)
+	if err != nil && !os.IsNotExist(err) {
+		sysutils.Error("Failed to delete service file: %v", err)
+		return err
+	}
+
+	_, err = runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "daemon-reload")
+	if err != nil {
+		sysutils.Error("Failed to reload systemd user daemon: %v", err)
+	}
+
+	sysutils.Success("MediaMTX service uninstalled successfully.")
+	return nil
+}
+
+// Start starts the MediaMTX service
 func Start() error {
 	loadEnv()
-	unitName := "frameflow-mediamtx"
-	mediaMtxDir := os.Getenv("MEDIAMTX_DIR")
-	if mediaMtxDir == "" {
-		mediaMtxDir = "/opt/mediamtx"
-	}
-	vlxSuiteDir := os.Getenv("VLXsuite_DIR")
-	if vlxSuiteDir == "" {
-		vlxSuiteDir = "/opt/VLX_FrameFlow"
-	}
-	templateFile := filepath.Join(vlxSuiteDir, "etc", "mediamtx.settings")
+	unitName := "frameflow-mediamtx.service"
+	userEnv := getUserEnv()
 
 	// Check if active
-	output, _ := runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "is-active", "--quiet", unitName)
+	output, _ := runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "is-active", "--quiet", unitName)
 	if output == "" {
-		// systemctl is-active returns empty output and 0 exit code if active, non-zero if inactive. Wait, the runCommand func will return err if exit code != 0.
-		// Let's actually check it properly:
-		_, err := runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "is-active", "--quiet", unitName)
+		_, err := runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "is-active", "--quiet", unitName)
 		if err == nil {
 			fmt.Println("[INFO] MediaMTX service is already running.")
-			runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "status", unitName, "--no-pager")
+			runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "status", unitName, "--no-pager")
 			return fmt.Errorf("service already running")
 		}
 	}
 
-	if _, err := os.Stat(templateFile); os.IsNotExist(err) {
-		fmt.Printf("[ERR] Template file not found at: %s\n", templateFile)
-		return fmt.Errorf("template file not found")
-	}
-
 	fmt.Println("[INFO] Starting MediaMTX via Systemd...")
-	_, err := runCommandWithEnv(30*time.Second, nil, "systemd-run", "--user",
-		"--unit="+unitName,
-		"--description=VLX FrameFlow MediaMTX Server",
-		"--collect",
-		"--property=Restart=on-failure",
-		"--property=RestartSec=5",
-		"--service-type=exec",
-		filepath.Join(mediaMtxDir, "mediamtx"), templateFile)
+	_, err := runCommandWithEnv(30*time.Second, userEnv, "systemctl", "--user", "start", unitName)
 
 	if err != nil {
 		fmt.Println("[ERR] Failed to start MediaMTX.")
-		runCommandWithEnv(10*time.Second, nil, "journalctl", "--user", "-u", unitName, "-n", "10", "--no-pager")
+		runCommandWithEnv(10*time.Second, userEnv, "journalctl", "--user", "-u", unitName, "-n", "10", "--no-pager")
 		return err
 	}
 
 	time.Sleep(2 * time.Second)
-	_, err = runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "is-active", "--quiet", unitName)
+	_, err = runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "is-active", "--quiet", unitName)
 	if err == nil {
 		fmt.Println("[OK] MediaMTX started.")
 		fmt.Printf("Logs: journalctl --user -u %s -f\n", unitName)
 	} else {
 		fmt.Println("[ERR] Failed to start MediaMTX.")
-		out, _ := runCommandWithEnv(10*time.Second, nil, "journalctl", "--user", "-u", unitName, "-n", "10", "--no-pager")
+		out, _ := runCommandWithEnv(10*time.Second, userEnv, "journalctl", "--user", "-u", unitName, "-n", "10", "--no-pager")
 		fmt.Println(out)
 	}
 
@@ -238,9 +294,11 @@ func Start() error {
 // Stop stops the MediaMTX service
 func Stop() error {
 	loadEnv()
-	unitName := "frameflow-mediamtx"
+	unitName := "frameflow-mediamtx.service"
+	userEnv := getUserEnv()
+
 	fmt.Println("Stopping MediaMTX...")
-	_, err := runCommandWithEnv(30*time.Second, nil, "systemctl", "--user", "stop", unitName)
+	_, err := runCommandWithEnv(30*time.Second, userEnv, "systemctl", "--user", "stop", unitName)
 	if err != nil {
 		return err
 	}
@@ -252,16 +310,17 @@ func Stop() error {
 // Status shows the status of MediaMTX service
 func Status() error {
 	loadEnv()
-	unitName := "frameflow-mediamtx"
+	unitName := "frameflow-mediamtx.service"
+	userEnv := getUserEnv()
 
-	_, err := runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "is-active", "--quiet", unitName)
+	_, err := runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "is-active", "--quiet", unitName)
 	if err != nil {
 		// Not active or crashed
-		runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "stop", unitName)
-		runCommandWithEnv(10*time.Second, nil, "pkill", "-u", os.Getenv("USER"), "mediamtx")
+		runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "stop", unitName)
+		runCommandWithEnv(10*time.Second, userEnv, "pkill", "-u", os.Getenv("USER"), "mediamtx")
 	}
 
-	out, err := runCommandWithEnv(10*time.Second, nil, "systemctl", "--user", "status", unitName, "--no-pager")
+	out, err := runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "status", unitName, "--no-pager")
 	fmt.Print(out)
 	return err
 }
@@ -277,4 +336,57 @@ func getInstalledUser() string {
 		return strings.TrimSpace(out)
 	}
 	return "root"
+}
+
+func GenerateService() error {
+	loadEnv()
+	mediaMtxDir := os.Getenv("MEDIAMTX_DIR")
+	if mediaMtxDir == "" {
+		mediaMtxDir = "/opt/mediamtx"
+	}
+	vlxSuiteDir := os.Getenv("VLXsuite_DIR")
+	if vlxSuiteDir == "" {
+		vlxSuiteDir = "/opt/VLX_FrameFlow"
+	}
+
+	execPath := filepath.Join(mediaMtxDir, "mediamtx")
+	configPath := filepath.Join(vlxSuiteDir, "etc", "mediamtx.settings")
+
+	serviceContent := fmt.Sprintf(`[Unit]
+Description=VLX FrameFlow MediaMTX Server
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=%s %s
+Restart=always
+
+[Install]
+WantedBy=default.target
+`, execPath, configPath)
+
+	serviceDir := os.Getenv("TEST_SERVICE_DIR")
+	if serviceDir == "" {
+		home, errHome := os.UserHomeDir()
+		if errHome != nil {
+			sysutils.Error("Failed to get user home directory: %v", errHome)
+			return errHome
+		}
+		serviceDir = filepath.Join(home, ".config", "systemd", "user")
+	}
+	err := os.MkdirAll(serviceDir, 0755)
+	if err != nil {
+		sysutils.Error("Failed to create systemd user directory: %v", err)
+		return err
+	}
+
+	servicePath := filepath.Join(serviceDir, "frameflow-mediamtx.service")
+	err = os.WriteFile(servicePath, []byte(serviceContent), 0644)
+	if err != nil {
+		sysutils.Error("Failed to write MediaMTX service file: %v", err)
+		return err
+	}
+
+	sysutils.Info("MediaMTX systemd user service generated at %s", servicePath)
+	return nil
 }

@@ -9,10 +9,14 @@ import (
 	"time"
 )
 
+// Test directories are overridden using TEST_SERVICE_DIR environment variable
+
 func TestInstallMediaMTX(t *testing.T) {
 	tempDir := t.TempDir()
 	os.Setenv("MEDIAMTX_DIR", tempDir)
 	defer os.Unsetenv("MEDIAMTX_DIR")
+	os.Setenv("TEST_SERVICE_DIR", tempDir)
+	defer os.Unsetenv("TEST_SERVICE_DIR")
 
 	// Store original mock setup
 	originalRunCommandWithEnv := runCommandWithEnv
@@ -59,6 +63,9 @@ func TestInstallMediaMTX(t *testing.T) {
 			}
 			if strings.Contains(cmdStr, "ls -ld") {
 				return "root root root", nil
+			}
+			if strings.Contains(cmdStr, "systemctl") {
+				return "", nil
 			}
 			return "", nil
 		}
@@ -154,7 +161,7 @@ func TestStartMediaMTX(t *testing.T) {
 			if strings.Contains(cmdStr, "sed -i") {
 				return "", nil
 			}
-			if strings.Contains(cmdStr, "systemd-run") {
+			if strings.Contains(cmdStr, "systemctl") && strings.Contains(cmdStr, "start") {
 				return "running", nil
 			}
 			return "", nil
@@ -186,25 +193,8 @@ func TestStartMediaMTX(t *testing.T) {
 		}
 	})
 
-	t.Run("Missing Template", func(t *testing.T) {
-		os.Remove(templatePath)
-		defer os.WriteFile(templatePath, []byte("runOnReady: ffmpeg_placeholder\n"), 0644)
-
-		runCommandWithEnv = func(timeout time.Duration, env []string, name string, args ...string) (string, error) {
-			cmdStr := name + " " + strings.Join(args, " ")
-			if strings.Contains(cmdStr, "systemctl") && strings.Contains(cmdStr, "is-active") {
-				return "", fmt.Errorf("inactive")
-			}
-			return "", nil
-		}
-
-		err := Start()
-		if err == nil {
-			t.Errorf("Expected error for missing template")
-		} else if err.Error() != "template file not found" {
-			t.Errorf("Expected specific error, got %v", err)
-		}
-	})
+	// Removed Missing Template test because we are no longer checking template existence in Start()
+	// The generated static service implicitly assumes the configuration template exists or mediamtx handles it natively.
 
 	t.Run("Start Failure", func(t *testing.T) {
 		runCommandWithEnv = func(timeout time.Duration, env []string, name string, args ...string) (string, error) {
@@ -219,8 +209,8 @@ func TestStartMediaMTX(t *testing.T) {
 			if strings.Contains(cmdStr, "sed -i") {
 				return "", nil
 			}
-			if strings.Contains(cmdStr, "systemd-run") {
-				return "", fmt.Errorf("systemd-run error")
+			if strings.Contains(cmdStr, "systemctl") && strings.Contains(cmdStr, "start") {
+				return "", fmt.Errorf("systemctl start error")
 			}
 			if strings.Contains(cmdStr, "journalctl") {
 				return "journal logs", nil
@@ -297,4 +287,22 @@ func TestStatusMediaMTX(t *testing.T) {
 // Global logger msg to track state in mock
 func setSysutilsGlobalLoggerMsg(msg string) {
 
+}
+
+func TestUninstallMediaMTX(t *testing.T) {
+	originalRunCommandWithEnv := runCommandWithEnv
+	defer func() { runCommandWithEnv = originalRunCommandWithEnv }()
+
+	runCommandWithEnv = func(timeout time.Duration, env []string, name string, args ...string) (string, error) {
+		cmdStr := name + " " + strings.Join(args, " ")
+		if strings.Contains(cmdStr, "systemctl") {
+			return "", nil
+		}
+		return "", fmt.Errorf("unexpected command: %s", cmdStr)
+	}
+
+	err := Uninstall()
+	if err != nil {
+		t.Errorf("Expected nil error, got %v", err)
+	}
 }
