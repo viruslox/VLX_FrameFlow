@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -114,10 +115,8 @@ func Install() error {
 		return fmt.Errorf("metadata is not valid JSON")
 	}
 
-	archSuffix := "linux_arm64.tar.gz"
-	if os.Getenv("FRAMEFLOW_ROLE") == "SERVER" {
-		archSuffix = "linux_amd64.tar.gz"
-	}
+	arch := runtime.GOARCH
+	archSuffix := "linux_" + arch + ".tar.gz"
 
 	urlCmd := fmt.Sprintf("echo '%s' | jq -r --arg sfx '%s' '[.assets[] | select(.name | endswith($sfx))] | first | .browser_download_url // empty'", strings.ReplaceAll(releaseJSON, "'", "'\\''"), archSuffix)
 	urlOutput, err := runCommandWithEnv(10*time.Second, nil, "bash", "-c", urlCmd)
@@ -170,11 +169,6 @@ func Install() error {
 				return err
 			}
 
-			user := getInstalledUser()
-			_, err = runCommandWithEnv(10*time.Second, nil, "chown", fmt.Sprintf("%s:%s", user, user), mediaMtxDir, mediaMtxPath)
-			if err != nil {
-				return err
-			}
 			_, err = runCommandWithEnv(10*time.Second, nil, "chmod", "700", mediaMtxPath)
 			if err != nil {
 				return err
@@ -317,7 +311,7 @@ func Status() error {
 	if err != nil {
 		// Not active or crashed
 		runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "stop", unitName)
-		runCommandWithEnv(10*time.Second, userEnv, "pkill", "-u", os.Getenv("USER"), "mediamtx")
+		runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "kill", unitName)
 	}
 
 	out, err := runCommandWithEnv(10*time.Second, userEnv, "systemctl", "--user", "status", unitName, "--no-pager")
