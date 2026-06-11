@@ -65,6 +65,10 @@ var clientResetCmd = &cobra.Command{
 	Use:   "reset",
 	Short: "Restart client networking and bonding services",
 	Run: func(cmd *cobra.Command, args []string) {
+		if os.Geteuid() == 0 {
+			fmt.Println("Error: client command must not be run as root. Please run as the dedicated user or via the vlx_frameflow alias without sudo.")
+			os.Exit(1)
+		}
 		network.ClientReset()
 	},
 }

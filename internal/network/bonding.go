@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -67,9 +68,11 @@ bindport = 5080
 // GenerateMlvpnService creates the systemd service file for MLVPN.
 func GenerateMlvpnService(serviceFile, mlvpnBin, targetUser, configFile, role string) error {
 	var description, execStartPost string
+	target := "multi-user.target"
 
 	if role == "CLIENT" {
 		description = "VLX FrameFlow MLVPN Bonding Client"
+		target = "default.target"
 		execStartPost = `
 ExecStartPost=/bin/sleep 2
 ExecStartPost=-/usr/bin/sudo /usr/sbin/ip rule del ipproto udp dport 8890 table 100
@@ -92,8 +95,8 @@ Restart=always
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
-`, description, mlvpnBin, targetUser, configFile, execStartPost)
+WantedBy=%s
+`, description, mlvpnBin, targetUser, configFile, execStartPost, target)
 
 	serviceDir := filepath.Dir(serviceFile)
 	err := os.MkdirAll(serviceDir, 0755)
@@ -177,7 +180,13 @@ func SetupMptcpProxy() error {
 		sysutils.Success("v2ray-plugin installed via apt.")
 	} else {
 		sysutils.Warning("v2ray-plugin apt install failed, falling back to manual wget download")
-		_, err = sysutils.RunCommand(10*time.Minute, "bash", "-c", "wget https://github.com/shadowsocks/v2ray-plugin/releases/download/v1.3.2/v2ray-plugin-linux-amd64-v1.3.2.tar.gz -O /tmp/v2ray.tar.gz && tar -xf /tmp/v2ray.tar.gz -C /tmp && mv /tmp/v2ray-plugin_linux_amd64 /usr/local/bin/v2ray-plugin && chmod +x /usr/local/bin/v2ray-plugin")
+		v2rayArch := "amd64"
+		if runtime.GOARCH == "arm64" {
+			v2rayArch = "arm64"
+		}
+		url := fmt.Sprintf("https://github.com/shadowsocks/v2ray-plugin/releases/download/v1.3.2/v2ray-plugin-linux-%s-v1.3.2.tar.gz", v2rayArch)
+		cmdStr := fmt.Sprintf("wget %s -O /tmp/v2ray.tar.gz && tar -xf /tmp/v2ray.tar.gz -C /tmp && mv /tmp/v2ray-plugin_linux_%s /usr/local/bin/v2ray-plugin && chmod +x /usr/local/bin/v2ray-plugin", url, v2rayArch)
+		_, err = sysutils.RunCommand(10*time.Minute, "bash", "-c", cmdStr)
 		if err != nil {
 			sysutils.Error("Failed to download and install v2ray-plugin manually")
 		} else {
@@ -250,7 +259,7 @@ Type=simple
 ExecStart=mptcpize run ss-redir -c /etc/shadowsocks-libev/mptcp.json
 Restart=always
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 `
 	} else {
 		serviceFile = "/etc/systemd/system/frameflow-mptcp-proxy.service"

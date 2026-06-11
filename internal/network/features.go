@@ -78,21 +78,3 @@ ExecStart=%s --timeout=2 --any
 	return nil
 }
 
-func ClientReset() error {
-	sysutils.Info("Stopping client components...")
-
-	services := []string{"frameflow-mptcp-proxy.service", "frameflow-mlvpn.service"}
-	for _, svc := range services {
-		sysutils.RunCommand(10*time.Second, "systemctl", "--user", "stop", svc)
-	}
-	sysutils.RunCommand(10*time.Second, "pkill", "-f", "ss-redir")
-	sysutils.RunCommand(10*time.Second, "pkill", "-f", "mlvpn")
-	sysutils.RunCommand(10*time.Second, "pkill", "-f", "v2ray-plugin")
-
-	sysutils.Info("Reconfiguring network interfaces...")
-
-	EnableNetworkSettings()
-	sysutils.RunCommand(10*time.Second, "sudo", "systemctl", "restart", "systemd-networkd.service")
-
-	return nil
-}
