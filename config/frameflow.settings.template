@@ -20,6 +20,8 @@ MLVPN_KEY=""
 DB_DSN="/opt/VLX_FrameFlow/var/frameflow.db"
 # SRT target
 SRT_URL="srt://frameflow-server.example:8890?streamid=publish:cam"
+CAM_MAX_RESOLUTION="1920x1080"
+CAM_MAX_FPS="30"
 
 # Client API
 # This is the native backend API on the Client device (SBC).
