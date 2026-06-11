@@ -17,23 +17,19 @@ describe('ControlPanel', () => {
     render(ControlPanel);
 
     await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith('/api/frameflow/bonding', expect.any(Object));
+        expect(global.fetch).toHaveBeenCalledWith('/api/v1/client/status');
     });
 
     global.fetch.mockRejectedValue(new Error('Start client network error'));
 
-    // Find the FrameFlow Client "Start" button
-    const clientHeader = screen.getByRole('heading', { name: 'FrameFlow Client' });
-    const clientGroup = clientHeader.closest('.control-group');
-
-    // There isn't a direct way to get within from screen without importing it
-    // We can use DOM API to find the button
+    const clientHeader = screen.getByRole('heading', { name: 'Network Client' });
+    const clientGroup = clientHeader.closest('.module-card');
     const startButton = Array.from(clientGroup.querySelectorAll('button')).find(btn => btn.textContent === 'Start');
 
     await fireEvent.click(startButton);
 
     await waitFor(() => {
-        expect(screen.getByText('Start client network error')).toBeTruthy();
+        expect(screen.getByText(/Start client network error/)).toBeTruthy();
     });
   });
 });
