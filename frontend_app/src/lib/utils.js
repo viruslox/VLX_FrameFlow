@@ -8,23 +8,23 @@ export function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, validIndex)).toFixed(2)) + " " + sizes[validIndex];
 }
 
-export function parseServiceStatus(outputString) {
-  const output = typeof outputString === "string" ? outputString.toLowerCase() : "";
+export function parseServiceStatus(rawStatus) {
+    if (!rawStatus) return { state: 'unknown', color: 'gray', label: 'Unknown' };
 
-  // Use regex to find specific status patterns, ignoring subsequent logs
-  if (/(?:active: inactive|active: failed|status: inactive|process is dead|service is stopped|state:\s*(?:stopped|inactive|dead))/i.test(output)) {
-     return "stopped";
-  } else if (/(?:active: active|status: active|service is running|command executed successfully|state:\s*(?:running|active))/i.test(output)) {
-     return "running";
-  } else {
-     // Fallback to word boundaries if specific patterns aren't found,
-     // prioritize "stopped" states first.
-     if (/\b(?:stopped|inactive|dead)\b/.test(output)) {
-         return "stopped";
-     } else if (/\b(?:running|active|executed)\b/.test(output)) {
-         return "running";
-     }
+    const cleanStatus = rawStatus.toString().trim().toLowerCase();
 
-     return "running"; // fallback if command succeeds but output is unknown format
-  }
+    switch (cleanStatus) {
+        case 'active':
+            return { state: 'active', color: 'green', label: 'Online' };
+        case 'inactive':
+            return { state: 'inactive', color: 'gray', label: 'Offline' };
+        case 'failed':
+            return { state: 'failed', color: 'red', label: 'Error' };
+        case 'activating':
+        case 'deactivating':
+        case 'reloading':
+            return { state: 'transitioning', color: 'yellow', label: 'Working...' };
+        default:
+            return { state: 'unknown', color: 'orange', label: cleanStatus };
+    }
 }

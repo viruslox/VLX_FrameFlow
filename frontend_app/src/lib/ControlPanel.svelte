@@ -1,590 +1,152 @@
 <script>
   import { onMount, onDestroy } from "svelte";
   import AnsiToHtml from "ansi-to-html";
-  import { telemetryStore } from "./ws.js";
   import { parseServiceStatus } from "./utils.js";
 
   const ansiConvert = new AnsiToHtml({ escapeXML: true });
+  let consoleOutput = "";
 
-  let lastResponse = "";
-  let errorMsg = "";
+  const modules = [
+    { id: 'client', name: "Network Client", endpoints: { start: "/api/v1/client/start", stop: "/api/v1/client/stop", status: "/api/v1/client/status", reset: "/api/v1/client/reset" } },
+    { id: 'ap', name: "Access Point", endpoints: { start: "/api/v1/ap/start", stop: "/api/v1/ap/stop", status: "/api/v1/ap/status" } },
+    { id: 'bonding', name: "Bonding MPTCP", endpoints: { start: "/api/v1/bonding/start", stop: "/api/v1/bonding/stop", status: "/api/v1/bonding/status" } },
+    { id: 'gps', name: "GPS Tracking", endpoints: { start: "/api/v1/gps/start", stop: "/api/v1/gps/stop", status: "/api/v1/gps/status" } },
+    { id: 'mediamtx', name: "MediaMTX Core", endpoints: { start: "/api/v1/mediamtx/start", stop: "/api/v1/mediamtx/stop", status: "/api/v1/mediamtx/status" } },
+    { id: 'cameraman', name: "Cameraman", endpoints: { start: "/api/v1/stream/start", stop: "/api/v1/stream/stop", status: "/api/v1/stream/status" } },
+  ];
 
-  let bondingStatusOutput = "";
-  let mediamtxStatus = "unknown";
-  let mediamtxInterval;
-  let gpsStatus = "unknown";
-  let gpsInterval;
-  let clientStatus = "unknown";
-  let clientInterval;
-  let cameramanStatus = "off";
-  let cameramanInterval;
-  let timeouts = [];
+  let serviceStates = {};
+  let pollingInterval;
 
-  let camV = "0";
-  let camA = "1";
-
-  // Devices mapping
-  const videoDevices = ["0", "1", "2", "3", "4", "5", "6"];
-  const audioDevices = ["0", "1", "2", "3", "4", "5", "6"];
-
-  $: deviceName = `V${camV}A${camA}`;
-
-  async function handleAction(
-    endpoint,
-    method = "POST",
-    body = null,
-    isBondingStatus = false,
-  ) {
+  const fetchStatuses = async () => {
     try {
-      errorMsg = "";
-      if (isBondingStatus) {
-        bondingStatusOutput = "Loading...";
-      } else {
-        lastResponse = "Loading...";
-      }
-
-      const options = {
-        method,
-        headers: {},
-      };
-
-      if (body) {
-        options.headers["Content-Type"] = "application/json";
-        options.body = JSON.stringify(body);
-      }
-
-      const res = await fetch(
-        `${endpoint}`,
-        options,
-      );
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Request failed");
-      }
-
-      // Convert ansi colors to html
-      const formatted = ansiConvert.toHtml(
-        typeof data.output === "string"
-          ? data.output
-          : (JSON.stringify(data.output || data, null, 2) || ""),
+      const results = await Promise.all(
+        modules.map(m => fetch(m.endpoints.status).then(res => res.json()).catch(() => ({ status: 'error' })))
       );
 
-      if (isBondingStatus) {
-        bondingStatusOutput = formatted;
-      } else {
-        lastResponse = formatted;
-      }
-    } catch (err) {
-      if (isBondingStatus) {
-        bondingStatusOutput = err.message;
-      } else {
-        errorMsg = err.message;
-        lastResponse = "";
-      }
-    }
-  }
-
-  function parseGPSStatus(output) {
-    const isGpsdMissing = /Unit frameflow-gpsd\.service could not be found/i.test(output);
-    const isSenderMissing = /Unit frameflow-gps-sender\.service could not be found/i.test(output);
-
-    const isGpsdRunning = /● frameflow-gpsd\.service[\s\S]*?Active: active \(running\)/i.test(output);
-    const isSenderRunning = /● frameflow-gps-sender\.service[\s\S]*?Active: active \(running\)/i.test(output);
-
-    if (isGpsdMissing && isSenderMissing) {
-       return "off";
-    } else if (isGpsdRunning && isSenderRunning) {
-       return "running";
-    } else {
-       return "error";
-    }
-  }
-
-  function parseCameramanStatus(output) {
-    const lowerOutput = output.toLowerCase();
-
-    if (lowerOutput.includes("no active cameraman services running.")) {
-       return "off";
-    } else if (lowerOutput.includes("cameraman services:") || lowerOutput.includes("active: active (running)")) {
-       return "running";
-    } else {
-       return "strange";
-    }
-  }
-
-  async function fetchServiceStatus(endpoint, parserFn, silent = false, fallbackStatus = "error") {
-    try {
-      if (!silent) {
-        lastResponse = "Loading...";
-        errorMsg = "";
-      }
-      const res = await fetch(endpoint, {
-        method: "POST"
+      let newStates = {};
+      results.forEach((res, index) => {
+        const modId = modules[index].id;
+        newStates[modId] = parseServiceStatus(res.status || 'unknown');
       });
+      serviceStates = newStates;
+    } catch (err) {
+      console.error("Polling failed", err);
+    }
+  };
+
+  const execCommand = async (moduleName, endpoint, actionName) => {
+    try {
+      logToConsole(`[${moduleName}] Initiating ${actionName}...`);
+      const res = await fetch(endpoint, { method: "POST" });
       const data = await res.json();
-
-      if (!res.ok) {
-        if (!silent) {
-           errorMsg = data.error || "Request failed";
-           lastResponse = "";
-        }
-        return fallbackStatus;
-      }
-
-      const output = typeof data.output === "string" ? data.output : "";
-      const status = parserFn(output);
-
-      if (!silent) {
-         lastResponse = ansiConvert.toHtml(
-          typeof data.output === "string"
-            ? data.output
-            : (JSON.stringify(data.output || data, null, 2) || "")
-         );
-      }
-      return status;
+      logToConsole(`[${moduleName}] Success: ${data.status || 'Done'}`);
+      fetchStatuses();
     } catch (err) {
-      if (!silent) {
-         errorMsg = err.message;
-         lastResponse = "";
-      }
-      return fallbackStatus;
+      logToConsole(`[${moduleName}] Failed: ${err.message}`, true);
     }
-  }
+  };
 
-  async function checkMediaMTXStatus(silent = false) {
-    mediamtxStatus = await fetchServiceStatus("/api/mediamtx/status", parseServiceStatus, silent, "error");
-  }
-
-  async function checkGPSStatus(silent = false) {
-    gpsStatus = await fetchServiceStatus("/api/gps/status", parseGPSStatus, silent, "error");
-  }
-
-  async function handleCameramanService() {
-    try {
-      errorMsg = "";
-      lastResponse = "Loading...";
-
-      const resStatus = await fetch(`/api/cameraman/status`, {
-        method: "POST"
-      });
-      const dataStatus = await resStatus.json();
-
-      if (!resStatus.ok) {
-        throw new Error(dataStatus.error || "Request failed");
-      }
-
-      const outputStatus = typeof dataStatus.output === "string" ? dataStatus.output : (JSON.stringify(dataStatus.output || dataStatus, null, 2) || "");
-
-      lastResponse = ansiConvert.toHtml(outputStatus);
-    } catch (err) {
-      errorMsg = err.message;
-      lastResponse = "";
-    }
-  }
-
-  async function handleDevList() {
-    try {
-      errorMsg = "";
-      lastResponse = "Loading...";
-
-      const resList = await fetch(`/api/cameraman/list-dev`, {
-        method: "POST"
-      });
-      const dataList = await resList.json();
-
-      if (!resList.ok) {
-        throw new Error(dataList.error || "Request failed");
-      }
-
-      const outputList = typeof dataList.output === "string" ? dataList.output : (JSON.stringify(dataList.output || dataList, null, 2) || "");
-
-      lastResponse = ansiConvert.toHtml(outputList);
-    } catch (err) {
-      errorMsg = err.message;
-      lastResponse = "";
-    }
-  }
-
-  async function checkCameramanStatus(silent = false) {
-    cameramanStatus = await fetchServiceStatus("/api/cameraman/status", parseCameramanStatus, silent, "strange");
-  }
-
-  async function checkClientStatus(silent = false) {
-    clientStatus = await fetchServiceStatus("/api/frameflow/client/status", parseServiceStatus, silent, "error");
+  function logToConsole(msg, isError = false) {
+    const timestamp = new Date().toLocaleTimeString();
+    const color = isError ? "red" : "lightgreen";
+    consoleOutput += `[${timestamp}] <span style="color:${color}">${ansiConvert.toHtml(msg)}</span><br/>`;
   }
 
   onMount(() => {
-    // initial fetch for bonding status
-    handleAction("/api/frameflow/bonding", "GET", null, true);
-
-    checkMediaMTXStatus(true);
-    mediamtxInterval = setInterval(() => checkMediaMTXStatus(true), 60000);
-
-    checkGPSStatus(true);
-    timeouts.push(setTimeout(() => {
-      gpsInterval = setInterval(() => checkGPSStatus(true), 60000);
-    }, 15000));
-
-    checkClientStatus(true);
-    timeouts.push(setTimeout(() => {
-      clientInterval = setInterval(() => checkClientStatus(true), 60000);
-    }, 30000));
-
-    checkCameramanStatus(true);
-    timeouts.push(setTimeout(() => {
-      cameramanInterval = setInterval(() => checkCameramanStatus(true), 60000);
-    }, 45000));
+    fetchStatuses();
+    pollingInterval = setInterval(fetchStatuses, 5000);
   });
 
-  onDestroy(() => {
-    timeouts.forEach(clearTimeout);
-    if (mediamtxInterval) {
-      clearInterval(mediamtxInterval);
-    }
-    if (gpsInterval) {
-      clearInterval(gpsInterval);
-    }
-    if (clientInterval) {
-      clearInterval(clientInterval);
-    }
-    if (cameramanInterval) {
-      clearInterval(cameramanInterval);
-    }
-  });
+  onDestroy(() => clearInterval(pollingInterval));
 </script>
 
-<div class="card">
-  <h2 style="text-align: center;">Bonding</h2>
-  <div class="controls-grid three-cols">
-    <!-- FrameFlow Client -->
-    <div class="control-group">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0;">FrameFlow Client</h3>
-        <div class="indicator {clientStatus}"></div>
-      </div>
-      <div class="buttons">
-        <button on:click={async () => { await handleAction("/api/frameflow/client/start"); await checkClientStatus(true); }}
-          >Start</button
-        >
-        <button on:click={async () => { await handleAction("/api/frameflow/client/stop"); await checkClientStatus(true); }}
-          >Stop</button
-        >
-        <button on:click={() => checkClientStatus(false)}
-          >Status</button
-        >
-        <button on:click={async () => { await handleAction("/api/frameflow/client/reset"); await checkClientStatus(true); }}
-          >Reset</button
-        >
-      </div>
-    </div>
-
-    <!-- Bonding Status -->
-    <div class="control-group console-box">
-      <div
-        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;"
-      >
-        <h3 style="margin: 0;">Status</h3>
-        <button
-          on:click={() =>
-            handleAction("/api/frameflow/bonding", "GET", null, true)}
-          >Refresh</button
-        >
-      </div>
-      <div class="mini-response">
-        {@html bondingStatusOutput || "No data"}
-      </div>
-    </div>
-
-    <!-- Access Point (FrameFlow AP) -->
-    <div class="control-group">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0;">Access Point</h3>
-        <span class="wifi-status"
-              class:master={$telemetryStore.wifiMode === "Master"}
-              class:managed={$telemetryStore.wifiMode === "Managed"}
-              class:not-found={$telemetryStore.wifiMode === "Not found"}>
-          {$telemetryStore.wifiMode}
-        </span>
-      </div>
-      <div class="buttons">
-        <button on:click={() => handleAction("/api/frameflow/ap/start")}
-          >Start</button
-        >
-        <button on:click={() => handleAction("/api/frameflow/ap/stop")}
-          >Stop</button
-        >
-        <button on:click={() => handleAction("/api/frameflow/ap/status")}
-          >Status</button
-        >
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="card">
-  <h2 style="text-align: center;">FrameFlow Services</h2>
-  <div class="controls-grid three-cols">
-    <!-- Cameraman -->
-    <div class="control-group">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0;">Cameraman</h3>
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <button on:click={handleCameramanService}>Service</button>
-          <div class="indicator {cameramanStatus}"></div>
-        </div>
-      </div>
-      <div class="form-group" style="margin-bottom: 0.5rem; margin-top: 0.5rem;">
-        <label for="camV">Video (Vx):</label>
-        <select id="camV" bind:value={camV}>
-          {#each videoDevices as v}
-            <option value={v}>V{v}</option>
-          {/each}
-        </select>
-        <label for="camA">Audio (Vy):</label>
-        <select id="camA" bind:value={camA}>
-          {#each audioDevices as a}
-            <option value={a}>A{a}</option>
-          {/each}
-        </select>
-      </div>
-      <p style="margin: 0.2rem 0; font-size: 0.9em;">Device: {deviceName}</p>
-      <div class="buttons">
-        <button
-          on:click={() =>
-            handleAction("/api/cameraman/start", "POST", {
-              device: deviceName,
-            })}>Start</button
-        >
-        <button
-          on:click={() =>
-            handleAction("/api/cameraman/stop", "POST", { device: deviceName })}
-          >Stop</button
-        >
-        <button
-          on:click={() =>
-            handleAction("/api/cameraman/status", "POST", {
-              device: deviceName,
-            })}>Status</button
-        >
-        <button
-          on:click={handleDevList}>Dev List</button
-        >
-      </div>
-    </div>
-
-    <!-- MediaMTX -->
-    <div class="control-group">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0;">MediaMTX</h3>
-        <div class="indicator {mediamtxStatus}"></div>
-      </div>
-      <div class="buttons">
-        <button on:click={async () => { await handleAction("/api/mediamtx/start"); await checkMediaMTXStatus(true); }}
-          >Start</button
-        >
-        <button on:click={async () => { await handleAction("/api/mediamtx/stop"); await checkMediaMTXStatus(true); }}>Stop</button
-        >
-        <button on:click={() => checkMediaMTXStatus(false)}
-          >Status</button
-        >
-      </div>
-    </div>
-
-    <!-- GPS Tracker -->
-    <div class="control-group">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0;">GPS Tracker</h3>
-        <div class="indicator {gpsStatus}"></div>
-      </div>
-      <div class="buttons">
-        <button on:click={async () => { await handleAction("/api/gps/start"); await checkGPSStatus(true); }}>Start</button>
-        <button on:click={async () => { await handleAction("/api/gps/stop"); await checkGPSStatus(true); }}>Stop</button>
-        <button on:click={() => checkGPSStatus(false)}>Status</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="card response-area">
-  <h4>Response:</h4>
-  {#if errorMsg}
-    <pre class="error">{errorMsg}</pre>
-  {:else if lastResponse}
-    <pre>{@html lastResponse}</pre>
-  {:else}
-    <p class="muted">No recent actions.</p>
-  {/if}
-</div>
-
 <style>
-  .card {
-    background: #f4f4f4;
-    padding: 1rem;
-    border-radius: 8px;
-  }
-  .controls-grid {
+  .module-grid {
     display: grid;
-    gap: 1rem;
-    margin-bottom: 0.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    padding: 1rem 0;
   }
-  .three-cols {
-    grid-template-columns: repeat(3, 1fr);
+  .module-card {
+    background: #1e1e2e;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
   }
-
-  @media (max-width: 768px) {
-    .three-cols {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .control-group {
-    background: #fff;
-    padding: 1rem;
-    border-radius: 6px;
-    border: 1px solid #ddd;
+  .module-header {
     display: flex;
-    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
   }
-  .console-box {
-    background: #222;
-    color: #0f0;
-    border-color: #444;
-  }
-  .console-box h3 {
+  .module-header h3 {
+    margin: 0;
+    font-size: 1.2rem;
     color: #fff;
   }
-
-  .control-group h3 {
-    margin-top: 0;
-    font-size: 1.1rem;
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 0.85rem;
+    text-transform: uppercase;
   }
-  .buttons {
+  .btn-group {
     display: flex;
+    gap: 0.5rem;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: auto;
-  }
-  .form-group {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .form-group select {
-    padding: 0.3rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    width: 80px;
-  }
-  .form-group select {
-    width: 60px;
   }
   button {
-    font-size: 0.9rem;
-    padding: 0.4em 0.8em;
+    background: #3a3a5a;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
     cursor: pointer;
+    transition: background 0.2s;
   }
-  .response-area {
-    background: #222;
-    color: #0f0;
+  button:hover { background: #5a5a8a; }
+  .console-box {
+    background: #000;
+    color: #ddd;
+    font-family: monospace;
     padding: 1rem;
-    border-radius: 6px;
-    min-height: 100px;
-    max-height: 300px;
+    height: 250px;
     overflow-y: auto;
-  }
-  .response-area h4 {
-    margin-top: 0;
-    color: #fff;
-  }
-
-  .mini-response {
-    background: transparent;
-    color: #0f0;
-    font-family: monospace;
-    font-size: 0.85rem;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    overflow-y: auto;
-    max-height: 150px;
-  }
-
-  pre {
-    margin: 0;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    font-family: monospace;
-  }
-  .error {
-    color: #ff4444;
-  }
-  .muted {
-    color: #888;
-    font-style: italic;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .card {
-      background: #333;
-    }
-    .control-group {
-      background: #444;
-      border-color: #555;
-    }
-    .console-box {
-      background: #222;
-    }
-    .form-group select {
-      background: #555;
-      color: #fff;
-      border-color: #666;
-    }
-    button {
-      background-color: #555;
-      color: #fff;
-      border: 1px solid #666;
-    }
-    button:hover {
-      background-color: #666;
-      border-color: #888;
-    }
-  }
-
-  .indicator {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background-color: gray;
-  }
-  .indicator.running {
-    background-color: #0f0;
-    box-shadow: 0 0 5px #0f0;
-  }
-  .indicator.stopped, .indicator.strange {
-    background-color: #ff0;
-    box-shadow: 0 0 5px #ff0;
-  }
-  .indicator.error {
-    background-color: #f00;
-    box-shadow: 0 0 5px #f00;
-  }
-  .indicator.off {
-    background-color: gray;
-    box-shadow: none;
-  }
-
-  .wifi-status {
-    font-size: 0.85em;
-    color: #666;
-  }
-  .wifi-status.master {
-    font-size: 1.1rem;
-    color: #0f0;
-  }
-  .wifi-status.managed {
-    color: #d4b106;
-  }
-  .wifi-status.not-found {
-    color: #ff4444;
+    border-radius: 8px;
+    margin-top: 2rem;
   }
 </style>
+
+<div>
+  <h2>Control Panel</h2>
+  <div class="module-grid">
+    {#each modules as mod}
+      <div class="module-card">
+        <div class="module-header">
+          <h3>{mod.name}</h3>
+          {#if serviceStates[mod.id]}
+            <span class="status-badge" style="background-color: {serviceStates[mod.id].color}; color: black;">
+              {serviceStates[mod.id].label}
+            </span>
+          {/if}
+        </div>
+
+        <div class="btn-group">
+          <button on:click={() => execCommand(mod.name, mod.endpoints.start, 'Start')}>Start</button>
+          <button on:click={() => execCommand(mod.name, mod.endpoints.stop, 'Stop')}>Stop</button>
+          {#if mod.endpoints.reset}
+            <button on:click={() => execCommand(mod.name, mod.endpoints.reset, 'Reset')}>Reset</button>
+          {/if}
+        </div>
+      </div>
+    {/each}
+  </div>
+
+  <h2>System Logs</h2>
+  <div class="console-box">
+    {@html consoleOutput}
+  </div>
+</div>
