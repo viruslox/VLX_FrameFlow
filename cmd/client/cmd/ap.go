@@ -92,6 +92,10 @@ var apSystemOpsCmd = &cobra.Command{
 	Use:    "_ap_system_ops [start|stop|status]",
 	Hidden: true,
 	Run: func(cmd *cobra.Command, args []string) {
+		if os.Geteuid() != 0 {
+			fmt.Println("Error: internal system operations must be run as root.")
+			os.Exit(1)
+		}
 		if len(args) == 0 {
 			os.Exit(1)
 		}
