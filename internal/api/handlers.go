@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"time"
 
@@ -41,60 +40,51 @@ func (a *API) RegisterRoutes(r *gin.Engine) {
 	// WebSocket Auth Ticket
 	api.GET("/ws/ticket", a.handleWSTicket)
 
-	// FrameFlow Client
-	api.POST("/frameflow/client/:action", a.handleFrameFlowClient)
+	// Group: /api/frameflow
+	frameflow := api.Group("/frameflow")
+	{
+		// Client
+		frameflow.POST("/client/start", HandleClientStart)
+		frameflow.POST("/client/stop", HandleClientStop)
+		frameflow.POST("/client/status", HandleClientStatus)
+		frameflow.POST("/client/reset", HandleClientReset)
 
-	// FrameFlow AP
-	api.POST("/frameflow/ap/:action", a.handleFrameFlowAP)
+		// AP
+		frameflow.POST("/ap/start", HandleAPStart)
+		frameflow.POST("/ap/stop", HandleAPStop)
+		frameflow.POST("/ap/status", HandleAPStatus)
 
-	// FrameFlow Bonding
-	api.GET("/frameflow/bonding", a.handleFrameFlowBonding)
+		// Bonding
+		frameflow.GET("/bonding", HandleBondingStatus)
+	}
 
-	// MediaMTX
-	api.POST("/mediamtx/:action", a.handleMediaMTX)
+	// Group: /api/cameraman
+	cameramanGroup := api.Group("/cameraman")
+	{
+		cameramanGroup.POST("/start", HandleStreamStart)
+		cameramanGroup.POST("/stop", HandleStreamStop)
+		cameramanGroup.POST("/status", HandleStreamStatus)
+		cameramanGroup.POST("/list-dev", HandleStreamListDev)
+	}
 
-	// GPS Tracker
-	api.POST("/gps/:action", a.handleGPS)
+	// Group: /api/mediamtx
+	mediamtxGroup := api.Group("/mediamtx")
+	{
+		mediamtxGroup.POST("/start", HandleMediaMTXStart)
+		mediamtxGroup.POST("/stop", HandleMediaMTXStop)
+		mediamtxGroup.POST("/status", HandleMediaMTXStatus)
+	}
 
-	// Cameraman
-	api.POST("/cameraman/:action", a.handleCameraman)
-
-	// Client extra actions
-	api.POST("/v1/client/reset", HandleClientReset)
-
-	// Client
-	api.POST("/v1/client/start", HandleClientStart)
-	api.POST("/v1/client/stop", HandleClientStop)
-	api.GET("/v1/client/status", HandleClientStatus)
-
-	// AP
-	api.POST("/v1/ap/start", HandleAPStart)
-	api.POST("/v1/ap/stop", HandleAPStop)
-	api.GET("/v1/ap/status", HandleAPStatus)
-
-	// Bonding
-	api.POST("/v1/bonding/start", HandleBondingStart)
-	api.POST("/v1/bonding/stop", HandleBondingStop)
-	api.GET("/v1/bonding/status", HandleBondingStatus)
-
-	// Stream (Cameraman)
-	api.POST("/v1/stream/start", HandleStreamStart)
-	api.POST("/v1/stream/stop", HandleStreamStop)
-	api.GET("/v1/stream/status", HandleStreamStatus)
-
-	// GPS actions
-	api.POST("/v1/gps/start", HandleGPSStart)
-	api.POST("/v1/gps/stop", HandleGPSStop)
-	api.GET("/v1/gps/status", HandleGPSStatus)
-
-	// MediaMTX actions
-	api.POST("/v1/mediamtx/start", HandleMediaMTXStart)
-	api.POST("/v1/mediamtx/stop", HandleMediaMTXStop)
-	api.GET("/v1/mediamtx/status", HandleMediaMTXStatus)
+	// Group: /api/gps
+	gpsGroup := api.Group("/gps")
+	{
+		gpsGroup.POST("/start", HandleGPSStart)
+		gpsGroup.POST("/stop", HandleGPSStop)
+		gpsGroup.POST("/status", HandleGPSStatus)
+	}
 
 	// Server Relay
 	api.Any("/v1/relay/*path", a.handleRelay)
-
 }
 
 func (a *API) handleWSTicket(c *gin.Context) {
@@ -106,201 +96,8 @@ func (a *API) handleWSTicket(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ticket": ticket})
 }
 
-func (a *API) handleFrameFlowClient(c *gin.Context) {
-	action := c.Param("action")
-	var err error
-	var out string
-	switch action {
-	case "start":
-		err = network.ClientStart()
-	case "stop":
-		err = network.ClientStop()
-	case "status":
-		out, err = network.ClientStatus()
-	case "reset":
-		err = network.ClientReset()
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid action"})
-		return
-	}
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if out == "" {
-		out = "client " + action
-	}
-	c.JSON(http.StatusOK, gin.H{"output": out})
-}
-
-func (a *API) handleFrameFlowAP(c *gin.Context) {
-	action := c.Param("action")
-	var err error
-	switch action {
-	case "start":
-		err = network.AccesspointStart()
-	case "stop":
-		err = network.AccesspointStop()
-	case "status":
-		err = network.AccesspointStatus()
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid action"})
-		return
-	}
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"output": "AP " + action})
-}
-
-func (a *API) handleFrameFlowBonding(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"output": network.GetBondingStatus()})
-}
-
-func (a *API) handleMediaMTX(c *gin.Context) {
-	action := c.Param("action")
-	var err error
-	var out string
-	switch action {
-	case "start", "stop", "status":
-		exePath, exeErr := os.Executable()
-		if exeErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get executable path: " + exeErr.Error()})
-			return
-		}
-		exePath, exeErr = filepath.EvalSymlinks(exePath)
-		if exeErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve executable path: " + exeErr.Error()})
-			return
-		}
-		out, err = sysutils.RunCommand(10*time.Second, exePath, "mediamtx", action)
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid action"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if out == "" {
-		out = "mediamtx " + action
-	}
-	c.JSON(http.StatusOK, gin.H{"output": out})
-}
-
-func (a *API) handleGPS(c *gin.Context) {
-	action := c.Param("action")
-	var err error
-	var out string
-	switch action {
-	case "start":
-		// We'll just pass a dummy port, or maybe we don't need it.
-		// For now let's just do it
-		err = gps.StartGPSD("/dev/ttyUSB0")
-	case "stop":
-		err = gps.StopGPSD()
-	case "status":
-		out = gps.StatusGPSD()
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid action"})
-		return
-	}
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if out == "" {
-		out = "gps " + action
-	}
-	c.JSON(http.StatusOK, gin.H{"output": out})
-}
-
 type CameramanRequest struct {
 	Device string `json:"device"` // e.g. V0A1
-}
-
-func (a *API) handleCameraman(c *gin.Context) {
-	action := c.Param("action")
-	if action != "start" && action != "stop" && action != "status" && action != "list-dev" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid action"})
-		return
-	}
-
-	var req CameramanRequest
-	if c.Request.ContentLength > 0 && c.Request.Body != nil {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-			return
-		}
-	}
-
-	// If device is not in JSON, try query param for compatibility
-	if req.Device == "" {
-		req.Device = c.Query("device")
-	}
-
-	if action == "list-dev" {
-		out, err := cameraman.ListDevices()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"output": out})
-		return
-	}
-
-	if req.Device != "" && !deviceRegex.MatchString(req.Device) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device parameter format"})
-		return
-	}
-
-	if action == "status" {
-		if req.Device == "" {
-			out, err := cameraman.StatusAllStreams()
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"output": out})
-			return
-		}
-		out, err := cameraman.StatusStream(req.Device)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"output": out})
-		return
-	}
-
-	if req.Device == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "device parameter is required for this action"})
-		return
-	}
-
-	var err error
-	if action == "start" {
-		// we'll just parse the device
-		vidID, audID, err := cameraman.ParseCameraID(req.Device)
-		if err == nil {
-			// dummy URL, mode, ffmpegPath for compilation
-			err = cameraman.StartStream(req.Device, vidID, audID)
-		}
-	} else if action == "stop" {
-		err = cameraman.StopStream(req.Device)
-	}
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"output": "cameraman " + action})
 }
 
 func (a *API) handleRelay(c *gin.Context) {
@@ -546,8 +343,18 @@ func HandleStreamStop(c *gin.Context) {
 }
 
 func HandleStreamStatus(c *gin.Context) {
-	device := c.Query("device")
-	if device == "" {
+	var req CameramanRequest
+	if c.Request.ContentLength > 0 && c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+	}
+	if req.Device == "" {
+		req.Device = c.Query("device")
+	}
+
+	if req.Device == "" {
 		status, err := cameraman.StatusAllStreams()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -557,10 +364,19 @@ func HandleStreamStatus(c *gin.Context) {
 		return
 	}
 
-	status, err := cameraman.StatusStream(device)
+	status, err := cameraman.StatusStream(req.Device)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": status})
+}
+
+func HandleStreamListDev(c *gin.Context) {
+	out, err := cameraman.ListDevices()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"output": out})
 }
