@@ -62,6 +62,26 @@ func (a *API) RegisterRoutes(r *gin.Engine) {
 	// Client extra actions
 	api.POST("/v1/client/reset", HandleClientReset)
 
+	// Client
+	api.POST("/v1/client/start", HandleClientStart)
+	api.POST("/v1/client/stop", HandleClientStop)
+	api.GET("/v1/client/status", HandleClientStatus)
+
+	// AP
+	api.POST("/v1/ap/start", HandleAPStart)
+	api.POST("/v1/ap/stop", HandleAPStop)
+	api.GET("/v1/ap/status", HandleAPStatus)
+
+	// Bonding
+	api.POST("/v1/bonding/start", HandleBondingStart)
+	api.POST("/v1/bonding/stop", HandleBondingStop)
+	api.GET("/v1/bonding/status", HandleBondingStatus)
+
+	// Stream (Cameraman)
+	api.POST("/v1/stream/start", HandleStreamStart)
+	api.POST("/v1/stream/stop", HandleStreamStop)
+	api.GET("/v1/stream/status", HandleStreamStatus)
+
 	// GPS actions
 	api.POST("/v1/gps/start", HandleGPSStart)
 	api.POST("/v1/gps/stop", HandleGPSStop)
@@ -383,5 +403,164 @@ func HandleMediaMTXStop(c *gin.Context) {
 
 func HandleMediaMTXStatus(c *gin.Context) {
 	status := mediamtx.Status()
+	c.JSON(http.StatusOK, gin.H{"status": status})
+}
+
+// --- Client Handlers ---
+func HandleClientStart(c *gin.Context) {
+	if err := network.ClientStart(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "client started"})
+}
+
+func HandleClientStop(c *gin.Context) {
+	if err := network.ClientStop(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "client stopped"})
+}
+
+func HandleClientStatus(c *gin.Context) {
+	status, err := network.ClientStatus()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": status})
+}
+
+// --- AP Handlers ---
+func HandleAPStart(c *gin.Context) {
+	if err := network.SystemAccesspointStart(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ap started"})
+}
+
+func HandleAPStop(c *gin.Context) {
+	if err := network.SystemAccesspointStop(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ap stopped"})
+}
+
+func HandleAPStatus(c *gin.Context) {
+	if err := network.SystemAccesspointStatus(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ap is active"})
+}
+
+// --- Bonding Handlers ---
+func HandleBondingStart(c *gin.Context) {
+	if err := network.SetupMlvpnBonding(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "MLVPN setup failed: " + err.Error()})
+		return
+	}
+	// Also attempt to set up mptcp proxy if part of bonding start sequence (based on system scripts context)
+	network.SetupMptcpProxy()
+	c.JSON(http.StatusOK, gin.H{"status": "bonding started"})
+}
+
+func HandleBondingStop(c *gin.Context) {
+	role := os.Getenv("FRAMEFLOW_ROLE")
+	if role == "SERVER" {
+		sysutils.RunCommand(10*time.Second, "systemctl", "stop", "frameflow-mlvpn.service")
+		sysutils.RunCommand(10*time.Second, "systemctl", "stop", "frameflow-mptcp-proxy.service")
+	} else {
+		sysutils.RunCommand(10*time.Second, "systemctl", "--user", "stop", "frameflow-mlvpn.service")
+		sysutils.RunCommand(10*time.Second, "systemctl", "--user", "stop", "frameflow-mptcp-proxy.service")
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "bonding stopped"})
+}
+
+func HandleBondingStatus(c *gin.Context) {
+	status := network.GetBondingStatus()
+	c.JSON(http.StatusOK, gin.H{"status": status})
+}
+
+// --- Stream (Cameraman) Handlers ---
+func HandleStreamStart(c *gin.Context) {
+	var req CameramanRequest
+	if c.Request.ContentLength > 0 && c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+	}
+	if req.Device == "" {
+		req.Device = c.Query("device")
+	}
+
+	if req.Device == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "device parameter is required"})
+		return
+	}
+
+	if !deviceRegex.MatchString(req.Device) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device parameter format"})
+		return
+	}
+
+	vidID, audID, err := cameraman.ParseCameraID(req.Device)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := cameraman.StartStream(req.Device, vidID, audID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "stream started"})
+}
+
+func HandleStreamStop(c *gin.Context) {
+	var req CameramanRequest
+	if c.Request.ContentLength > 0 && c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+	}
+	if req.Device == "" {
+		req.Device = c.Query("device")
+	}
+
+	if req.Device == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "device parameter is required"})
+		return
+	}
+
+	if err := cameraman.StopStream(req.Device); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "stream stopped"})
+}
+
+func HandleStreamStatus(c *gin.Context) {
+	device := c.Query("device")
+	if device == "" {
+		status, err := cameraman.StatusAllStreams()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": status})
+		return
+	}
+
+	status, err := cameraman.StatusStream(device)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"status": status})
 }
