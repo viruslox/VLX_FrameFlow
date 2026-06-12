@@ -36,6 +36,12 @@ export function parseServiceStatus(rawStatus) {
     if (cleanStatus.includes('running')) return { state: 'active', color: 'green', label: 'Online' };
     if (cleanStatus.includes('db: stopped')) return { state: 'inactive', color: 'gray', label: 'Offline' };
 
+    // GPS matches
+    if (cleanStatus.includes('gps: stopped')) return { state: 'stopped', color: 'gray', label: 'Offline' };
+    if (cleanStatus.includes('gps: active')) return { state: 'active', color: 'green', label: 'Online' };
+    if (cleanStatus.includes('gps: inactive') || cleanStatus.includes('gps: failed')) return { state: 'inactive', color: 'yellow', label: 'Inactive' };
+    if (cleanStatus.includes('gps: activating') || cleanStatus.includes('gps: deactivating')) return { state: 'transitioning', color: 'yellow', label: 'Working...' };
+
 
     switch (cleanStatus) {
         case 'active':
