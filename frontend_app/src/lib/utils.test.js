@@ -75,6 +75,14 @@ describe('parseServiceStatus', () => {
     expect(parseServiceStatus('reloading')).toEqual({ state: 'transitioning', color: 'yellow', label: 'Working...' });
   });
 
+  it('returns correct state for gps status', () => {
+    expect(parseServiceStatus('gps: stopped')).toEqual({ state: 'stopped', color: 'gray', label: 'Offline' });
+    expect(parseServiceStatus('gps: active')).toEqual({ state: 'active', color: 'green', label: 'Online' });
+    expect(parseServiceStatus('gps: inactive')).toEqual({ state: 'inactive', color: 'yellow', label: 'Inactive' });
+    expect(parseServiceStatus('gps: failed')).toEqual({ state: 'inactive', color: 'yellow', label: 'Inactive' });
+    expect(parseServiceStatus('gps: activating')).toEqual({ state: 'transitioning', color: 'yellow', label: 'Working...' });
+  });
+
   it('returns unknown state for unknown string formats', () => {
     expect(parseServiceStatus('Started successfully')).toEqual({ state: 'unknown', color: 'orange', label: 'started successfully' });
     expect(parseServiceStatus('Some random output')).toEqual({ state: 'unknown', color: 'orange', label: 'some random output' });

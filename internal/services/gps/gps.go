@@ -128,11 +128,17 @@ func StopGPSD() error {
 }
 
 func StatusGPSD() string {
-	out, err := sysutils.RunCommand(5*time.Second, "systemctl", "--user", "is-active", "frameflow-gpsd.service")
-	if err != nil {
-		return "inactive"
+	outLoad, _ := sysutils.RunCommand(5*time.Second, "systemctl", "--user", "show", "-p", "LoadState", "--value", "frameflow-gpsd.service")
+	if strings.Contains(strings.TrimSpace(outLoad), "not-found") {
+		return "gps: stopped"
 	}
-	return strings.TrimSpace(out)
+
+	out, err := sysutils.RunCommand(5*time.Second, "systemctl", "--user", "is-active", "frameflow-gpsd.service")
+	activeState := strings.TrimSpace(out)
+	if err != nil && activeState == "" {
+		return "gps: inactive"
+	}
+	return "gps: " + activeState
 }
 
 type TPVReport struct {
