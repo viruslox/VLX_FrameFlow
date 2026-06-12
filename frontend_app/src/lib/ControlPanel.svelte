@@ -74,10 +74,9 @@
 
   const logDevList = async () => {
     try {
-      logToConsole(`[Cameraman] Fetching Devlist...`);
       const res = await fetch("/api/cameraman/list-dev", { method: "POST" });
       const data = await res.json();
-      logToConsole(`[Cameraman] Devlist:\n${data.output}`);
+      logToConsole(data.output);
       fetchDevList(); // refresh dropdown too
     } catch (err) {
       logToConsole(`[Cameraman] Failed to fetch devlist: ${err.message}`, true);
@@ -106,7 +105,16 @@
 
   const execCommand = async (moduleName, endpoint, actionName, payload = null) => {
     try {
-      logToConsole(`[${moduleName}] Initiating ${actionName}...`);
+      if (moduleName === "Cameraman") {
+        if (actionName === "Start" && payload) {
+          logToConsole(`Starting stream ${payload.device}...`);
+        } else if (actionName === "Stop" && payload) {
+          logToConsole(`Stopping stream ${payload.device}...`);
+        }
+      } else {
+        logToConsole(`[${moduleName}] Initiating ${actionName}...`);
+      }
+
       const options = { method: "POST" };
       if (payload) {
         options.headers = { "Content-Type": "application/json" };
@@ -114,7 +122,13 @@
       }
       const res = await fetch(endpoint, options);
       const data = await res.json();
-      logToConsole(`[${moduleName}] Success: ${data.status || 'Done'}`);
+
+      if (moduleName === "Cameraman" && (actionName === "Start" || actionName === "Stop" || actionName === "Status")) {
+        logToConsole(data.status || 'Done');
+      } else {
+        logToConsole(`[${moduleName}] Success: ${data.status || 'Done'}`);
+      }
+
       fetchStatuses();
     } catch (err) {
       logToConsole(`[${moduleName}] Failed: ${err.message}`, true);
@@ -125,6 +139,10 @@
     const timestamp = new Date().toLocaleTimeString();
     const color = isError ? "red" : "lightgreen";
     consoleOutput += `[${timestamp}] <span style="color:${color}">${ansiConvert.toHtml(msg)}</span><br/>`;
+  }
+
+  function clearConsole() {
+    consoleOutput = "";
   }
 
   onMount(() => {
@@ -211,6 +229,18 @@
     white-space: pre-wrap;
     box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
   }
+  .logs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .clear-btn {
+    background: transparent;
+    color: #888;
+    border: 1px solid #555;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+  }
 </style>
 
 <div>
@@ -224,7 +254,7 @@
             {#if mod.id === 'cameraman'}
               <button style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" on:click={logDevList}>Devlist</button>
             {/if}
-            {#if serviceStates[mod.id] && mod.id !== 'bonding'}
+            {#if serviceStates[mod.id]}
               <div class="status-badge" style="background-color: {serviceStates[mod.id].color === 'gray' ? '#555' : serviceStates[mod.id].color};" title="{serviceStates[mod.id].label}"></div>
             {/if}
           </div>
@@ -260,7 +290,10 @@
     {/each}
   </div>
 
-  <h2>System Logs</h2>
+  <div class="logs-header">
+    <h2>System Logs</h2>
+    <button class="clear-btn" on:click={clearConsole}>Clear</button>
+  </div>
   <div class="console-box">
     {@html consoleOutput}
   </div>
