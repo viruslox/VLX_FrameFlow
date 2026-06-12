@@ -13,6 +13,20 @@ export function parseServiceStatus(rawStatus) {
 
     const cleanStatus = rawStatus.toString().trim().toLowerCase();
 
+    // Partial matches for long systemctl status outputs
+    if (cleanStatus.includes('active: active')) return { state: 'active', color: 'green', label: 'Online' };
+    if (cleanStatus.includes('active: inactive')) return { state: 'inactive', color: 'gray', label: 'Offline' };
+    if (cleanStatus.includes('active: failed')) return { state: 'failed', color: 'orange', label: 'Error' };
+    if (cleanStatus.includes('active: activating') || cleanStatus.includes('active: deactivating') || cleanStatus.includes('active: reloading')) return { state: 'transitioning', color: 'yellow', label: 'Working...' };
+
+    // Cameraman matches
+    if (cleanStatus.includes('no active cameraman services running')) return { state: 'inactive', color: 'gray', label: 'Offline' };
+    if (cleanStatus.includes('api: active')) return { state: 'active', color: 'green', label: 'Online' };
+    if (cleanStatus.includes('api: not found')) return { state: 'inactive', color: 'gray', label: 'Offline' };
+    if (cleanStatus.includes('running')) return { state: 'active', color: 'green', label: 'Online' };
+    if (cleanStatus.includes('db: stopped')) return { state: 'inactive', color: 'gray', label: 'Offline' };
+
+
     switch (cleanStatus) {
         case 'active':
             return { state: 'active', color: 'green', label: 'Online' };
