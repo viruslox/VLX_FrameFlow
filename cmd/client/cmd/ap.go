@@ -68,21 +68,12 @@ var apStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check is the wifi interface status is coherent with configuration, if not tries to recover.",
 	Run: func(cmd *cobra.Command, args []string) {
-		if os.Geteuid() == 0 {
-			fmt.Println("Error: AP command must not be run as root. Please run as the dedicated user or via the vlx_frameflow alias without sudo.")
+		status, err := network.AccesspointStatus()
+		if err != nil {
+			sysutils.Error("Error checking AP status: %v", err)
 			os.Exit(1)
 		}
-		binary, err := os.Executable()
-		if err != nil {
-			binary = "VLX_FrameFlow"
-		}
-		out, err := sysutils.RunCommand(30*time.Second, "sudo", binary, "ap", "_ap_system_ops", "status")
-		if out != "" {
-			fmt.Print(out)
-		}
-		if err != nil {
-			os.Exit(1)
-		}
+		fmt.Println(status)
 	},
 }
 
