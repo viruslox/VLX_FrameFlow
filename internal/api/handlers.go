@@ -17,7 +17,7 @@ import (
 	"github.com/viruslox/vlx_frameflow/internal/sysutils"
 )
 
-var deviceRegex = regexp.MustCompile(`^V\d+A\d+$`)
+var deviceRegex = regexp.MustCompile(`^(V|A)\d+$`)
 
 type API struct {
 	ticketManager *TicketManager
@@ -304,13 +304,13 @@ func HandleStreamStart(c *gin.Context) {
 		return
 	}
 
-	vidID, audID, err := cameraman.ParseCameraID(req.Device)
+	hwType, id, err := cameraman.ParseCameraID(req.Device)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if err := cameraman.StartStream(req.Device, vidID, audID); err != nil {
+	if err := cameraman.StartStream(req.Device, hwType, id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

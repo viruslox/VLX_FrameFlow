@@ -123,6 +123,10 @@
       const res = await fetch(endpoint, options);
       const data = await res.json();
 
+      if (!res.ok) {
+        throw new Error(data.error || 'API request failed');
+      }
+
       if (moduleName === "Cameraman" && (actionName === "Start" || actionName === "Stop" || actionName === "Status")) {
         logToConsole(data.status || 'Done');
       } else {
