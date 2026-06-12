@@ -233,7 +233,7 @@ func HandleClientStatus(c *gin.Context) {
 
 // --- AP Handlers ---
 func HandleAPStart(c *gin.Context) {
-	if err := network.SystemAccesspointStart(); err != nil {
+	if err := network.AccesspointStart(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -241,7 +241,7 @@ func HandleAPStart(c *gin.Context) {
 }
 
 func HandleAPStop(c *gin.Context) {
-	if err := network.SystemAccesspointStop(); err != nil {
+	if err := network.AccesspointStop(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
