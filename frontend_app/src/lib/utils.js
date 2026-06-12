@@ -13,6 +13,15 @@ export function parseServiceStatus(rawStatus) {
 
     const cleanStatus = rawStatus.toString().trim().toLowerCase();
 
+    // Bonding specific matches
+    if (cleanStatus.includes('mptcp proxy') && cleanStatus.includes('mlvpn tunnel')) {
+        const mptcpActive = cleanStatus.includes('mptcp proxy (shadowsocks): active');
+        const mlvpnActive = cleanStatus.includes('mlvpn tunnel (mlvpn0): connected');
+        if (mptcpActive && mlvpnActive) return { state: 'active', color: 'green', label: 'Online' };
+        if (!mptcpActive && !mlvpnActive) return { state: 'inactive', color: 'gray', label: 'Offline' };
+        return { state: 'degraded', color: 'yellow', label: 'Degraded' };
+    }
+
     // Partial matches for long systemctl status outputs
     if (cleanStatus.includes('active: active')) return { state: 'active', color: 'green', label: 'Online' };
     if (cleanStatus.includes('active: inactive')) return { state: 'inactive', color: 'gray', label: 'Offline' };

@@ -314,7 +314,7 @@ func HandleStreamStart(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "stream started"})
+	c.JSON(http.StatusOK, gin.H{"status": "Stream " + req.Device + " started successfully."})
 }
 
 func HandleStreamStop(c *gin.Context) {
@@ -338,7 +338,7 @@ func HandleStreamStop(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "stream stopped"})
+	c.JSON(http.StatusOK, gin.H{"status": "Stream " + req.Device + " stopped successfully."})
 }
 
 func HandleStreamStatus(c *gin.Context) {
