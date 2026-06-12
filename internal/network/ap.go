@@ -40,6 +40,16 @@ func SystemAccesspointStart() error {
 	if out, err := sysutils.RunCommand(10*time.Second, "systemctl", "disable", fmt.Sprintf("wpa_supplicant@%s.service", wifiIf)); err != nil {
 		return fmt.Errorf("failed to disable wpa_supplicant: %w, output: %s", err, out)
 	}
+	wpaService := fmt.Sprintf("wpa_supplicant@%s.service", wifiIf)
+	if out, err := sysutils.RunCommand(10*time.Second, "systemctl", "mask", wpaService); err != nil {
+		if strings.Contains(out, "already exists") {
+			sysutils.Warning("File conflict detected. Forcing mask for %s...", wpaService)
+			os.Remove(fmt.Sprintf("/etc/systemd/system/%s", wpaService))
+			sysutils.RunCommand(10*time.Second, "systemctl", "mask", wpaService)
+		} else {
+			return fmt.Errorf("failed to mask wpa_supplicant: %w, output: %s", err, out)
+		}
+	}
 
 	os.Remove(fmt.Sprintf("%s/20-%s-managed.network", systemdNetDir, wifiIf))
 
@@ -89,8 +99,12 @@ func SystemAccesspointStop() error {
 	if out, err := sysutils.RunCommand(10*time.Second, "systemctl", "disable", "hostapd"); err != nil {
 		return fmt.Errorf("failed to disable hostapd: %w, output: %s", err, out)
 	}
-	if out, err := sysutils.RunCommand(10*time.Second, "systemctl", "mask", "hostapd"); err != nil {
-		return fmt.Errorf("failed to mask hostapd: %w, output: %s", err, out)
+
+	out, err := sysutils.RunCommand(10*time.Second, "systemctl", "mask", "hostapd")
+	if err != nil && strings.Contains(out, "already exists") {
+		sysutils.Warning("File conflict detected. Forcing mask for hostapd...")
+		os.Remove("/etc/systemd/system/hostapd.service")
+		sysutils.RunCommand(10*time.Second, "systemctl", "mask", "hostapd")
 	}
 
 	os.Remove(fmt.Sprintf("%s/40-%s-ap.network", systemdNetDir, wifiIf))
@@ -140,12 +154,6 @@ func SystemAccesspointStatus() string {
 		hostapdActive = true
 	}
 
-	out, _ = sysutils.RunCommand(5*time.Second, "ip", "-o", "link", "show", wifiIf)
-	if !strings.Contains(out, "UP") {
-		sysutils.Warning("Interface %s is down, attempting recovery...", wifiIf)
-		sysutils.RunCommand(10*time.Second, "ip", "link", "set", wifiIf, "up")
-	}
-
 	if hostapdActive {
 		sysutils.Success("Access Point Mode: Enabled")
 		return "active"
@@ -179,14 +187,14 @@ func AccesspointStop() error {
 	return nil
 }
 
-func AccesspointStatus() error {
+func AccesspointStatus() (string, error) {
 	binary, err := os.Executable()
 	if err != nil {
 		binary = "VLX_FrameFlow"
 	}
 	out, err := sysutils.RunCommand(30*time.Second, "sudo", binary, "ap", "_ap_system_ops", "status")
 	if err != nil {
-		return fmt.Errorf("failed to get AP status: %w, output: %s", err, out)
+		return "error", fmt.Errorf("failed to get AP status: %w, output: %s", err, out)
 	}
-	return nil
+	return strings.TrimSpace(out), nil
 }
