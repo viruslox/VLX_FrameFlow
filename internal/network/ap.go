@@ -94,8 +94,13 @@ func SystemAccesspointStop() error {
 	}
 
 	os.Remove(fmt.Sprintf("%s/40-%s-ap.network", systemdNetDir, wifiIf))
-	if out, err := sysutils.RunCommand(10*time.Second, "sh", "-c", "cp /etc/systemd/network/profiles/normal/*.network /etc/systemd/network/"); err != nil {
-		return fmt.Errorf("failed to cp managed network profile: %w, output: %s", err, out)
+
+	normProfileDir := os.Getenv("NORM_PROFILE")
+	if normProfileDir == "" {
+		normProfileDir = "/etc/systemd/network/profiles/normal"
+	}
+	if out, err := sysutils.RunCommand(10*time.Second, "sh", "-c", fmt.Sprintf("cp %s/*.network %s/", normProfileDir, systemdNetDir)); err != nil {
+		return fmt.Errorf("failed to cp managed network profile (from %s to %s): %w, output: %s", normProfileDir, systemdNetDir, err, out)
 	}
 
 	if out, err := sysutils.RunCommand(10*time.Second, "systemctl", "restart", "systemd-networkd.service"); err != nil {
