@@ -11,7 +11,8 @@ export function formatBytes(bytes) {
 export function parseServiceStatus(rawStatus) {
     if (!rawStatus) return { state: 'unknown', color: 'orange', label: 'Unknown' };
 
-    const cleanStatus = rawStatus.toString().trim().toLowerCase();
+    const noAnsi = rawStatus.toString().replace(/\x1b\[[0-9;]*m/g, '');
+    const cleanStatus = noAnsi.trim().toLowerCase();
 
     // Bonding specific matches
     if (cleanStatus.includes('mptcp proxy') && cleanStatus.includes('mlvpn tunnel')) {
