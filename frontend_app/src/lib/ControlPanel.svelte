@@ -57,15 +57,9 @@
         }
       }
 
-      const combos = [];
-      if (vIds.length === 0) vIds.push("V0");
-      if (aIds.length === 0) aIds.push("A0");
-
-      for (const v of vIds) {
-        for (const a of aIds) {
-          combos.push(`${v}${a}`);
-        }
-      }
+      const combos = [...vIds, ...aIds];
+      if (vIds.length === 0) combos.push("V0");
+      if (aIds.length === 0) combos.push("A0");
 
       availableDevices = combos;
       if (combos.length > 0 && !selectedDevice) {
@@ -73,8 +67,8 @@
       }
     } catch (err) {
       console.error("Failed to fetch devlist", err);
-      availableDevices = ["V0A0"];
-      if (!selectedDevice) selectedDevice = "V0A0";
+      availableDevices = ["V0", "A0"];
+      if (!selectedDevice) selectedDevice = "V0";
     }
   };
 
@@ -204,6 +198,7 @@
     overflow-y: auto;
     border-radius: 8px;
     margin-top: 2rem;
+    white-space: pre-wrap;
   }
   .lcd-display {
     background: #111;
@@ -225,9 +220,14 @@
       <div class="module-card">
         <div class="module-header">
           <h3>{mod.name}</h3>
-          {#if serviceStates[mod.id] && mod.id !== 'bonding'}
-            <div class="status-badge" style="background-color: {serviceStates[mod.id].color === 'gray' ? '#555' : serviceStates[mod.id].color};" title="{serviceStates[mod.id].label}"></div>
-          {/if}
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            {#if mod.id === 'cameraman'}
+              <button style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" on:click={logDevList}>Devlist</button>
+            {/if}
+            {#if serviceStates[mod.id] && mod.id !== 'bonding'}
+              <div class="status-badge" style="background-color: {serviceStates[mod.id].color === 'gray' ? '#555' : serviceStates[mod.id].color};" title="{serviceStates[mod.id].label}"></div>
+            {/if}
+          </div>
         </div>
 
         {#if mod.id === 'bonding' && rawStates[mod.id]}
@@ -250,10 +250,7 @@
             <button on:click={() => execCommand(mod.name, mod.endpoints.stop, 'Stop', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Stop</button>
           {/if}
           {#if mod.id !== 'bonding'}
-            <button on:click={() => execCommand(mod.name, mod.endpoints.status, 'Status', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Status</button>
-          {/if}
-          {#if mod.id === 'cameraman'}
-            <button on:click={logDevList}>Devlist</button>
+            <button on:click={() => execCommand(mod.name, mod.endpoints.status, 'Status', null)}>Status</button>
           {/if}
           {#if mod.endpoints.reset}
             <button on:click={() => execCommand(mod.name, mod.endpoints.reset, 'Reset')}>Reset</button>
