@@ -16,7 +16,7 @@ export async function connectWebSocket() {
 
     let ticket = "";
     try {
-      const res = await fetch("/api/ws/ticket");
+      const res = await fetch("api/ws/ticket");
       if (res.ok) {
         const data = await res.json();
         ticket = data.ticket;
@@ -31,7 +31,10 @@ export async function connectWebSocket() {
       return;
     }
 
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws?ticket=${encodeURIComponent(ticket)}`;
+    const pathname = window.location.pathname || '/';
+    const cleanPath = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+    const wsUrl = `${wsProtocol}//${window.location.host}${cleanPath}/ws?ticket=${encodeURIComponent(ticket)}`;
+
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {

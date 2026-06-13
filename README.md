@@ -201,6 +201,23 @@ This file contains **all runtime environment variables**. It is generated during
 
 *Note: Settings-based hardware mapping for video/audio devices has been deprecated in favor of dynamic CLI arguments (`VxAy`).*
 
+
+### Apache Reverse Proxy
+
+To serve the Control Panel Frontend behind an Apache Reverse Proxy (for example, under the `/vlx/` path), ensure that the `proxy`, `proxy_http`, and `proxy_wstunnel` modules are enabled. Use the following configuration block:
+
+```apache
+<Location /vlx/>
+    ProxyPass http://127.0.0.1:8080/
+    ProxyPassReverse http://127.0.0.1:8080/
+</Location>
+
+<Location /vlx/ws>
+    ProxyPass ws://127.0.0.1:8080/ws
+    ProxyPassReverse ws://127.0.0.1:8080/ws
+</Location>
+```
+Note: Adjust the port (`8080` by default) to match your `vlx_frontend` bind port.
 ### General Paths
 
 | Variable | Description |
