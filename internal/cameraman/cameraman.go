@@ -447,16 +447,16 @@ func StartStream(cameraID string, hwType string, id int) error {
 
 		if formatName == "default" {
 			// Fallback if we couldn't parse formats
-			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
+			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f mpegts "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
 		} else if strings.Contains(formatName, "h264") {
 			// Copy H264 stream natively
-			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format h264 -framerate %f -video_size %dx%d -i %s -c:v copy -f srt "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
+			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format h264 -framerate %f -video_size %dx%d -i %s -c:v copy -f mpegts "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
 		} else if strings.Contains(formatName, "mjpg") || strings.Contains(formatName, "mjpeg") {
 			// Hardware outputs MJPEG, we usually transcode to H264 for compatibility
-			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format mjpeg -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
+			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format mjpeg -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f mpegts "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
 		} else {
 			// Raw formats like yuyv422
-			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format %s -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f srt "%s"`, formatName, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
+			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format %s -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f mpegts "%s"`, formatName, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
 		}
 
 		// API Payload for V4L2 directly streaming to SRT
@@ -470,7 +470,7 @@ func StartStream(cameraID string, hwType string, id int) error {
 		}
 
 		// API Payload for ALSA directly streaming to SRT
-		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f alsa -i hw:%s -c:a aac -b:a 128k -af aresample=async=1 -f srt "%s"`, hwPath, AppendCameraID(srtURL, cameraID))
+		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f alsa -i hw:%s -c:a aac -b:a 128k -af aresample=async=1 -f mpegts "%s"`, hwPath, AppendCameraID(srtURL, cameraID))
 	}
 
 	payloadBytes, err := json.Marshal(payloadData)
