@@ -82,6 +82,7 @@ pathDefaults:
 paths:
   ~^wificam:
     # Acts as an RTMP-to-SRT auto-forwarder
-    runOnReady: ffmpeg -i rtmp://localhost:$RTMP_PORT/$MTX_PATH -c copy -f srt "srt://10.1.10.1:8890?streamid=publish:$MTX_PATH"
+    runOnReady: ffmpeg -i rtmp://localhost:$RTMP_PORT/$MTX_PATH -c copy -f mpegts "srt://10.1.10.1:8890?streamid=publish:$MTX_PATH"
+    runOnReadyRestart: yes
   ~^cameraman:
-    # Dynamically configured via the API. Operates exclusively over SRT (V4L2/ALSA direct-to-SRT ingest) without WebRTC multiplexing.
+    # Dynamically configured via the API. Operates exclusively over SRT (V4L2/ALSA direct-to-SRT ingest).
