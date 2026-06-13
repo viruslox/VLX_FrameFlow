@@ -7,12 +7,12 @@
   let consoleOutput = "";
 
   const modules = [
-    { id: 'client', name: "Network Client", endpoints: { start: "/api/frameflow/client/start", stop: "/api/frameflow/client/stop", status: "/api/frameflow/client/status", reset: "/api/frameflow/client/reset" } },
-    { id: 'ap', name: "Access Point", endpoints: { start: "/api/frameflow/ap/start", stop: "/api/frameflow/ap/stop", status: "/api/frameflow/ap/status" } },
-    { id: 'bonding', name: "Bonding", endpoints: { start: "/api/frameflow/bonding/start", stop: "/api/frameflow/bonding/stop", status: "/api/frameflow/bonding/status" } },
-    { id: 'gps', name: "GPS Tracking", endpoints: { start: "/api/gps/start", stop: "/api/gps/stop", status: "/api/gps/status" } },
-    { id: 'mediamtx', name: "MediaMTX Core", endpoints: { start: "/api/mediamtx/start", stop: "/api/mediamtx/stop", status: "/api/mediamtx/status" } },
-    { id: 'cameraman', name: "Cameraman", endpoints: { start: "/api/cameraman/start", stop: "/api/cameraman/stop", status: "/api/cameraman/status", listDev: "/api/cameraman/list-dev" } },
+    { id: 'client', name: "Network Client", endpoints: { start: "api/frameflow/client/start", stop: "api/frameflow/client/stop", status: "api/frameflow/client/status", reset: "api/frameflow/client/reset" } },
+    { id: 'ap', name: "Access Point", endpoints: { start: "api/frameflow/ap/start", stop: "api/frameflow/ap/stop", status: "api/frameflow/ap/status" } },
+    { id: 'bonding', name: "Bonding", endpoints: { start: "api/frameflow/bonding/start", stop: "api/frameflow/bonding/stop", status: "api/frameflow/bonding/status" } },
+    { id: 'gps', name: "GPS Tracking", endpoints: { start: "api/gps/start", stop: "api/gps/stop", status: "api/gps/status" } },
+    { id: 'mediamtx', name: "MediaMTX Core", endpoints: { start: "api/mediamtx/start", stop: "api/mediamtx/stop", status: "api/mediamtx/status" } },
+    { id: 'cameraman', name: "Cameraman", endpoints: { start: "api/cameraman/start", stop: "api/cameraman/stop", status: "api/cameraman/status", listDev: "api/cameraman/list-dev" } },
   ];
 
   let serviceStates = {};
@@ -24,7 +24,7 @@
 
   const fetchDevList = async () => {
     try {
-      const res = await fetch("/api/cameraman/list-dev", { method: "POST" });
+      const res = await fetch("api/cameraman/list-dev", { method: "POST" });
       const data = await res.json();
       const output = data.output || "";
 
@@ -74,7 +74,7 @@
 
   const logDevList = async () => {
     try {
-      const res = await fetch("/api/cameraman/list-dev", { method: "POST" });
+      const res = await fetch("api/cameraman/list-dev", { method: "POST" });
       const data = await res.json();
       logToConsole(data.output);
       fetchDevList(); // refresh dropdown too
