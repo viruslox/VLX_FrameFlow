@@ -160,7 +160,9 @@ func HandleClientReset(c *gin.Context) {
 
 // --- GPS Handlers ---
 func HandleGPSStart(c *gin.Context) {
-	if err := gps.StartGPSD("/dev/ttyUSB0"); err != nil {
+	// Provide the default TCP port for gpsd (2947) instead of the device path.
+	// The hardware device path is automatically discovered by GetGPSDevice() internally.
+	if err := gps.StartGPSD("2947"); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
