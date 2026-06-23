@@ -9,8 +9,8 @@ import (
 )
 
 var cameramanCmd = &cobra.Command{
-	Use:   "cameraman <V1|A1> <start|stop|status> | devlist",
-	Short: "Manages video encoding pipelines",
+	Use:   "cameraman <V1|V1A2> <start|stop|status> | devlist",
+	Short: "Manages combined hardware AV encoding pipelines",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if os.Geteuid() == 0 {
@@ -26,7 +26,7 @@ var cameramanCmd = &cobra.Command{
 		action := ""
 		cameraID := args[0]
 
-		// If just "status", show all
+		// Status display block
 		if len(args) == 1 && cameraID == "status" {
 			out, err := cameraman.StatusAllStreams()
 			if err != nil {
@@ -37,7 +37,7 @@ var cameramanCmd = &cobra.Command{
 			return
 		}
 
-		// If just "devlist", show devices
+		// Device list block
 		if len(args) == 1 && cameraID == "devlist" {
 			out, err := cameraman.ListDevices()
 			if err != nil {
@@ -49,13 +49,14 @@ var cameramanCmd = &cobra.Command{
 		}
 
 		if len(args) < 2 {
-			fmt.Println("Insufficient arguments. Expected: cameraman <V1|A1> <start|stop|status>")
+			fmt.Println("Insufficient arguments. Expected: cameraman <V1|V1A2> <start|stop|status>")
 			os.Exit(1)
 		}
 
 		action = args[1]
 
-		hwType, id, err := cameraman.ParseCameraID(cameraID)
+		// Validate syntax formatting before triggering the backend
+		_, _, _, err := cameraman.ParseCameraID(cameraID)
 		if err != nil {
 			fmt.Printf("Error parsing camera ID: %v\n", err)
 			os.Exit(1)
@@ -63,13 +64,14 @@ var cameramanCmd = &cobra.Command{
 
 		switch action {
 		case "start":
-				fmt.Printf("Starting stream %s...\n", cameraID)
-				err = cameraman.StartStream(cameraID, hwType, id)
-				if err != nil {
-					fmt.Printf("Error starting stream: %v\n", err)
-					os.Exit(1)
-				}
-				fmt.Printf("Stream %s started successfully.\n", cameraID)
+			fmt.Printf("Starting stream %s...\n", cameraID)
+			err = cameraman.StartStream(cameraID)
+			if err != nil {
+				fmt.Printf("Error starting stream: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Stream %s started successfully.\n", cameraID)
+
 		case "stop":
 			fmt.Printf("Stopping stream %s...\n", cameraID)
 			err := cameraman.StopStream(cameraID)
