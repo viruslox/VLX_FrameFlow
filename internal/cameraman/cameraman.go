@@ -9,10 +9,10 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -71,19 +71,18 @@ func init() {
 	}
 
 	// Boot sync
-	rows, err := db.Query("SELECT id, device_type FROM cameraman_devices WHERE status='running'")
+	rows, err := db.Query("SELECT id FROM cameraman_devices WHERE status='running'")
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
-			var id, deviceType string
-			if err := rows.Scan(&id, &deviceType); err == nil {
+			var id string
+			if err := rows.Scan(&id); err == nil {
 				// We don't want to block init, so run in a goroutine
-				go func(camID, hwType string) {
-					parsedID, _ := strconv.Atoi(strings.TrimPrefix(camID, hwType))
-					if err := StartStream(camID, hwType, parsedID); err != nil {
+				go func(camID string) {
+					if err := StartStream(camID); err != nil {
 						fmt.Printf("[Cameraman Boot] Auto-start failed %s: %v\n", camID, err)
 					}
-				}(id, deviceType)
+				}(id)
 			}
 		}
 	}
@@ -91,7 +90,7 @@ func init() {
 
 func GetVideoDevice(vidID int) (string, error) {
 	if vidID == 0 {
-		return "", nil
+		return "", fmt.Errorf("Video device V0 is invalid")
 	}
 
 	out, err := sysutils.RunCommand(10*time.Second, "v4l2-ctl", "--list-devices")
@@ -118,10 +117,8 @@ func GetVideoDevice(vidID int) (string, error) {
 		if isValid && strings.Contains(line, "/dev/video") {
 			path := strings.TrimSpace(line)
 			validDevices = append(validDevices, path)
-			// Wait, the bash script says `if ($1 ~ /\/dev\/video/) { print $1; printed_path = 1 }`
-			// and `!printed_path` so it only prints the first /dev/video* per device group.
-			// Let's correctly implement it.
-			isValid = false // Set to false to avoid printing other paths for the same device
+			// Avoid printing other paths for the same device group
+			isValid = false
 		}
 	}
 
@@ -149,7 +146,7 @@ func GetAudioDevice(audID int) (string, error) {
 	for _, line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[0] == "card" {
-			// fields[1] is something like "0:"
+			// Extract card ID
 			id := strings.TrimSuffix(fields[1], ":")
 			audioDevices = append(audioDevices, id)
 		}
@@ -161,6 +158,66 @@ func GetAudioDevice(audID int) (string, error) {
 	}
 
 	return audioDevices[index], nil
+}
+
+// getHardwareParentPath traverses sysfs upwards to find the parent USB or PCI device
+func getHardwareParentPath(sysfsPath string) string {
+	current := sysfsPath
+	for current != "/" && current != "." && len(current) > 4 {
+		hasUSB := false
+		if _, err := os.Stat(filepath.Join(current, "idVendor")); err == nil {
+			hasUSB = true
+		}
+		
+		hasPCI := false
+		if _, err := os.Stat(filepath.Join(current, "vendor")); err == nil && !hasUSB {
+			if _, err := os.Stat(filepath.Join(current, "device")); err == nil {
+				hasPCI = true
+			}
+		}
+		
+		if hasUSB || hasPCI {
+			return current
+		}
+		current = filepath.Dir(current)
+	}
+	// Fallback to direct parent if vendor signatures are missing
+	return filepath.Dir(sysfsPath)
+}
+
+// FindMatchingAudioDevice attempts to auto-discover the associated ALSA card via sysfs topology
+func FindMatchingAudioDevice(videoDevPath string) string {
+	videoDevName := filepath.Base(videoDevPath)
+	videoSysfs, err := filepath.EvalSymlinks(fmt.Sprintf("/sys/class/video4linux/%s/device", videoDevName))
+	if err != nil {
+		return ""
+	}
+	
+	videoParent := getHardwareParentPath(videoSysfs)
+	if videoParent == "" || videoParent == "/" {
+		return ""
+	}
+
+	files, err := os.ReadDir("/sys/class/sound")
+	if err != nil {
+		return ""
+	}
+
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), "card") {
+			cardSysfs, err := filepath.EvalSymlinks(filepath.Join("/sys/class/sound", f.Name(), "device"))
+			if err != nil {
+				continue
+			}
+			
+			audioParent := getHardwareParentPath(cardSysfs)
+			// Match verified if both devices share the exact same hardware parent (PCI/USB)
+			if audioParent == videoParent {
+				return strings.TrimPrefix(f.Name(), "card")
+			}
+		}
+	}
+	return ""
 }
 
 type FormatCapability struct {
@@ -276,7 +333,7 @@ func DetermineBestFormat(v4l2Caps, ffmpegCaps []FormatCapability, maxResWidth, m
 	if !foundMatch {
 		minDiff := 1e12
 		for _, cap := range caps {
-				diff := math.Abs(float64(cap.Width-maxResWidth)) + math.Abs(float64(cap.Height-maxResHeight))
+			diff := math.Abs(float64(cap.Width-maxResWidth)) + math.Abs(float64(cap.Height-maxResHeight))
 			diffScore := diff - float64(formatScore(cap.Format)*1000)
 
 			if diffScore < minDiff {
@@ -300,34 +357,40 @@ func GetDeviceCapabilitiesV4L2(hwPath string) []FormatCapability {
 func GetDeviceCapabilitiesFFmpeg(hwPath string) []FormatCapability {
 	out, err := sysutils.RunCommand(10*time.Second, "ffmpeg", "-f", "v4l2", "-list_formats", "all", "-i", hwPath)
 	if err != nil {
-		// Even if ffmpeg exits with error (e.g. "Error opening input file"), we can parse stdout/stderr
 		return parseFfmpegFormats(out)
 	}
 	return parseFfmpegFormats(out)
 }
 
-func ParseCameraID(camID string) (string, int, error) {
-	re := regexp.MustCompile(`^(V|A)([0-9]+)$`)
-	matches := re.FindStringSubmatch(camID)
-
-	if matches == nil {
-		return "", 0, fmt.Errorf("Invalid format. Expected V1, A1, etc.")
+// ParseCameraID handles formats like V1 (auto audio) or V1A2 (manual override)
+// Returns: videoID, audioID, hasExplicitAudio, error
+func ParseCameraID(camID string) (int, int, bool, error) {
+	reCombined := regexp.MustCompile(`^V([0-9]+)A([0-9]+)$`)
+	if matches := reCombined.FindStringSubmatch(camID); matches != nil {
+		vID, _ := strconv.Atoi(matches[1])
+		aID, _ := strconv.Atoi(matches[2])
+		if vID == 0 {
+			return 0, 0, false, fmt.Errorf("Video device ID cannot be 0")
+		}
+		return vID, aID, true, nil
 	}
 
-	hwType := matches[1]
-	id, _ := strconv.Atoi(matches[2])
-
-	if id == 0 {
-		return "", 0, fmt.Errorf("Device ID cannot be 0.")
+	reSingle := regexp.MustCompile(`^V([0-9]+)$`)
+	if matches := reSingle.FindStringSubmatch(camID); matches != nil {
+		vID, _ := strconv.Atoi(matches[1])
+		if vID == 0 {
+			return 0, 0, false, fmt.Errorf("Video device ID cannot be 0")
+		}
+		return vID, 0, false, nil
 	}
 
-	return hwType, id, nil
+	return 0, 0, false, fmt.Errorf("Invalid format. Expected V1, V1A2, etc.")
 }
 
 func PrepareStreamURL(srtURL string) string {
 	finalSRT := srtURL
 
-	// Check if bonding server is reachable (10.1.10.1)
+	// Check if bonding server is reachable
 	bondingServerReach := false
 	_, err := sysutils.RunCommand(2*time.Second, "ping", "-c", "1", "-W", "1", "10.1.10.1")
 	if err == nil {
@@ -351,24 +414,20 @@ func AppendCameraID(srtURL, cameraID string) string {
 	q := u.Query()
 	streamid := q.Get("streamid")
 
-	// Handle streamid logic
 	if streamid != "" {
 		parts := strings.Split(streamid, ":")
 		if len(parts) >= 2 {
-			// Mutate strictly the path segment (index 1)
 			parts[1] = fmt.Sprintf("%s_%s", parts[1], cameraID)
 		} else {
 			parts[0] = fmt.Sprintf("%s_%s", parts[0], cameraID)
 		}
 		q.Set("streamid", strings.Join(parts, ":"))
 		u.RawQuery = q.Encode()
-		// Prevent %3A URL-encoding of colons in the final SRT string
 		res := u.String()
 		res = strings.ReplaceAll(res, "%3A", ":")
 		return res
 	}
 
-	// Fallback logic if streamid is absent or parsing fails
 	if u.Path != "" {
 		u.Path = fmt.Sprintf("%s_%s", u.Path, cameraID)
 	} else {
@@ -406,7 +465,12 @@ func parseFPS(fpsStr string) float64 {
 	return fps
 }
 
-func StartStream(cameraID string, hwType string, id int) error {
+func StartStream(cameraID string) error {
+	vID, explicitAID, explicitAudio, err := ParseCameraID(cameraID)
+	if err != nil {
+		return err
+	}
+
 	settings := LoadSettings()
 	srtURL := settings["SRT_URL"]
 	if srtURL == "" {
@@ -415,72 +479,80 @@ func StartStream(cameraID string, hwType string, id int) error {
 
 	maxResWidth, maxResHeight := parseResolution(settings["CAM_MAX_RESOLUTION"])
 	maxFPS := parseFPS(settings["CAM_MAX_FPS"])
-
-	// Dynamic URLs
 	srtURL = PrepareStreamURL(srtURL)
-
-	hwPath := ""
 
 	payloadData := map[string]interface{}{
 		"source":           "publisher",
 		"runOnInitRestart": true,
 	}
 
-	if hwType == "V" {
-		var err error
-		hwPath, err = GetVideoDevice(id)
-		if err != nil {
-			return fmt.Errorf("Failed to get video device V%d: %w", id, err)
-		}
-
-		v4l2Caps := GetDeviceCapabilitiesV4L2(hwPath)
-		ffmpegCaps := GetDeviceCapabilitiesFFmpeg(hwPath)
-		bestFormat := DetermineBestFormat(v4l2Caps, ffmpegCaps, maxResWidth, maxResHeight, maxFPS)
-
-		fps := bestFormat.FPS
-		if fps == 0 {
-			fps = maxFPS
-		}
-
-		ffmpegStr := ""
-		formatName := strings.ToLower(bestFormat.Format)
-
-		if formatName == "default" {
-			// Fallback if we couldn't parse formats
-			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f mpegts "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
-		} else if strings.Contains(formatName, "h264") {
-			// Copy H264 stream natively
-			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format h264 -framerate %f -video_size %dx%d -i %s -c:v copy -f mpegts "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
-		} else if strings.Contains(formatName, "mjpg") || strings.Contains(formatName, "mjpeg") {
-			// Hardware outputs MJPEG, we usually transcode to H264 for compatibility
-			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format mjpeg -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f mpegts "%s"`, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
-		} else {
-			// Raw formats like yuyv422
-			ffmpegStr = fmt.Sprintf(`ffmpeg -f v4l2 -input_format %s -framerate %f -video_size %dx%d -i %s -c:v libx264 -preset ultrafast -tune zerolatency -f mpegts "%s"`, formatName, fps, bestFormat.Width, bestFormat.Height, hwPath, AppendCameraID(srtURL, cameraID))
-		}
-
-		// API Payload for V4L2 directly streaming to SRT
-		payloadData["runOnInit"] = ffmpegStr
-
-	} else if hwType == "A" {
-		var err error
-		hwPath, err = GetAudioDevice(id)
-		if err != nil {
-			return fmt.Errorf("Failed to get audio device A%d: %w", id, err)
-		}
-
-		// API Payload for ALSA directly streaming to SRT
-		payloadData["runOnInit"] = fmt.Sprintf(`ffmpeg -f alsa -i hw:%s -c:a aac -b:a 128k -af aresample=async=1 -f mpegts "%s"`, hwPath, AppendCameraID(srtURL, cameraID))
+	// 1. Video Hardware Mapping
+	hwPathVideo, err := GetVideoDevice(vID)
+	if err != nil {
+		return fmt.Errorf("Failed to get video device V%d: %w", vID, err)
 	}
+
+	v4l2Caps := GetDeviceCapabilitiesV4L2(hwPathVideo)
+	ffmpegCaps := GetDeviceCapabilitiesFFmpeg(hwPathVideo)
+	bestFormat := DetermineBestFormat(v4l2Caps, ffmpegCaps, maxResWidth, maxResHeight, maxFPS)
+
+	fps := bestFormat.FPS
+	if fps == 0 {
+		fps = maxFPS
+	}
+
+	formatName := strings.ToLower(bestFormat.Format)
+	var videoInput, videoCodec string
+
+	if formatName == "default" {
+		videoInput = fmt.Sprintf(`-f v4l2 -framerate %f -video_size %dx%d -i %s`, fps, bestFormat.Width, bestFormat.Height, hwPathVideo)
+		videoCodec = `-c:v libx264 -preset ultrafast -tune zerolatency`
+	} else if strings.Contains(formatName, "h264") {
+		videoInput = fmt.Sprintf(`-f v4l2 -input_format h264 -framerate %f -video_size %dx%d -i %s`, fps, bestFormat.Width, bestFormat.Height, hwPathVideo)
+		videoCodec = `-c:v copy`
+	} else if strings.Contains(formatName, "mjpg") || strings.Contains(formatName, "mjpeg") {
+		videoInput = fmt.Sprintf(`-f v4l2 -input_format mjpeg -framerate %f -video_size %dx%d -i %s`, fps, bestFormat.Width, bestFormat.Height, hwPathVideo)
+		videoCodec = `-c:v libx264 -preset ultrafast -tune zerolatency`
+	} else {
+		videoInput = fmt.Sprintf(`-f v4l2 -input_format %s -framerate %f -video_size %dx%d -i %s`, formatName, fps, bestFormat.Width, bestFormat.Height, hwPathVideo)
+		videoCodec = `-c:v libx264 -preset ultrafast -tune zerolatency`
+	}
+
+	// 2. Audio Hardware Mapping & Fallback Strategy
+	var hwPathAudio string
+	if explicitAudio {
+		if explicitAID > 0 {
+			hwPathAudio, err = GetAudioDevice(explicitAID)
+			if err != nil {
+				return fmt.Errorf("Failed to get audio device A%d: %w", explicitAID, err)
+			}
+		}
+	} else {
+		// Auto-discovery via sysfs hardware tree
+		hwPathAudio = FindMatchingAudioDevice(hwPathVideo)
+	}
+
+	var audioInput, audioCodec string
+	if hwPathAudio != "" {
+		audioInput = fmt.Sprintf(`-f alsa -i hw:%s`, hwPathAudio)
+		audioCodec = `-c:a aac -b:a 128k -af aresample=async=1`
+	} else {
+		// Essential for MediaMTX: Always generate a silent audio track if hardware is missing
+		audioInput = `-f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100`
+		audioCodec = `-c:a aac -b:a 128k`
+	}
+
+	// 3. Command Construction
+	ffmpegStr := fmt.Sprintf(`ffmpeg %s %s %s %s -f mpegts "%s"`, videoInput, audioInput, videoCodec, audioCodec, AppendCameraID(srtURL, cameraID))
+	payloadData["runOnInit"] = ffmpegStr
 
 	payloadBytes, err := json.Marshal(payloadData)
 	if err != nil {
 		return fmt.Errorf("Failed to marshal JSON payload: %w", err)
 	}
 
-	// Post to API
+	// 4. API Request
 	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/config/paths/add/cameraman_%s", cameraID)
-
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return fmt.Errorf("Failed to create HTTP request: %w", err)
@@ -501,9 +573,16 @@ func StartStream(cameraID string, hwType string, id int) error {
 		return fmt.Errorf("MediaMTX API returned status: %d", resp.StatusCode)
 	}
 
-	// Update DB
+	// 5. Database Update
 	if db != nil {
-		_, err = db.Exec("INSERT INTO cameraman_devices (id, hw_path, device_type, status) VALUES (?, ?, ?, 'running') ON CONFLICT(id) DO UPDATE SET status='running', hw_path=?, device_type=?", cameraID, hwPath, hwType, hwPath, hwType)
+		hwPaths := hwPathVideo
+		if hwPathAudio != "" {
+			hwPaths += fmt.Sprintf(",hw:%s", hwPathAudio)
+		} else {
+			hwPaths += ",anullsrc"
+		}
+		
+		_, err = db.Exec("INSERT INTO cameraman_devices (id, hw_path, device_type, status) VALUES (?, ?, 'AV', 'running') ON CONFLICT(id) DO UPDATE SET status='running', hw_path=?, device_type='AV'", cameraID, hwPaths, hwPaths)
 		if err != nil {
 			fmt.Printf("Failed to update database: %v\n", err)
 		}
@@ -555,7 +634,6 @@ func StatusStream(cameraID string) (string, error) {
 		return "", fmt.Errorf("Stream %s not found in DB", cameraID)
 	}
 
-	// Query MediaMTX
 	apiURL := fmt.Sprintf("http://127.0.0.1:9997/v3/paths/get/cameraman_%s", cameraID)
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
@@ -649,7 +727,6 @@ func ListDevices() (string, error) {
 	b.WriteString("------------------------------------------------------------------------\n")
 	b.WriteString("  ID   | HW Idx | Device Description\n")
 	b.WriteString("  -----|--------|---------------------------------------------------------\n")
-	b.WriteString("  A0   | none   | No audio (Silent)\n")
 	out, err = sysutils.RunCommand(10*time.Second, "arecord", "-l")
 	if err == nil {
 		aIdx := 1
@@ -673,6 +750,11 @@ func ListDevices() (string, error) {
 		b.WriteString("[ERR] 'arecord' not installed.\n")
 	}
 	b.WriteString("\n")
+	b.WriteString("------------------------------------------------------------------------\n")
+	b.WriteString(" Tip: Start streams using 'V1' (auto-discovers hardware audio) \n")
+	b.WriteString("      or use manual override like 'V1A2' (forces V1 with A2).\n")
+	b.WriteString("      Silent video devices will automatically generate a blank audio track.\n")
+	b.WriteString("------------------------------------------------------------------------\n")
 	return b.String(), nil
 }
 
