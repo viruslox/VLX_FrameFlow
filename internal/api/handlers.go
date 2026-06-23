@@ -296,7 +296,7 @@ func HandleStreamStart(c *gin.Context) {
 		return
 	}
 
-	// Validate syntax utilizing the updated ParseCameraID logic
+	// Validate syntax utilizing the updated ParseCameraID logic directly
 	_, _, _, err := cameraman.ParseCameraID(req.Device)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device parameter format: " + err.Error()})
