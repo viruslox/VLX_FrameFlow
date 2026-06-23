@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -16,8 +15,6 @@ import (
 	"github.com/viruslox/vlx_frameflow/internal/services/mediamtx"
 	"github.com/viruslox/vlx_frameflow/internal/sysutils"
 )
-
-var deviceRegex = regexp.MustCompile(`^(V|A)\d+$`)
 
 type API struct {
 	ticketManager *TicketManager
@@ -99,7 +96,7 @@ func (a *API) handleWSTicket(c *gin.Context) {
 }
 
 type CameramanRequest struct {
-	Device string `json:"device"` // e.g. V0A1
+	Device string `json:"device"` // e.g. V1 or V1A2
 }
 
 func (a *API) handleRelay(c *gin.Context) {
@@ -299,18 +296,14 @@ func HandleStreamStart(c *gin.Context) {
 		return
 	}
 
-	if !deviceRegex.MatchString(req.Device) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device parameter format"})
-		return
-	}
-
-	hwType, id, err := cameraman.ParseCameraID(req.Device)
+	// Validate syntax utilizing the updated ParseCameraID logic
+	_, _, _, err := cameraman.ParseCameraID(req.Device)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device parameter format: " + err.Error()})
 		return
 	}
 
-	if err := cameraman.StartStream(req.Device, hwType, id); err != nil {
+	if err := cameraman.StartStream(req.Device); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
