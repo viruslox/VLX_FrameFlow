@@ -96,7 +96,7 @@ func TestGetVideoDevice(t *testing.T) {
 		expected string
 		err      bool
 	}{
-		{"vidID=0", 0, "", false},
+		{"vidID=0", 0, "", true},
 		{"vidID=1", 1, "/dev/video4", false},
 		{"vidID=2", 2, "/dev/video6", false},
 		{"vidID=3 missing", 3, "", true},
@@ -117,7 +117,7 @@ func TestGetVideoDevice(t *testing.T) {
 }
 
 func TestStartStream(t *testing.T) {
-	err := StartStream("V10", "V", 10)
+	err := StartStream("V10")
 	if err == nil {
 		t.Errorf("StartStream should fail for missing device")
 	}
@@ -168,33 +168,38 @@ func TestPrepareStreamURL(t *testing.T) {
 
 func TestParseCameraID(t *testing.T) {
 	tests := []struct {
-		camID       string
-		expectedHW  string
-		expectedID  int
-		err         bool
+		camID         string
+		expectedVID   int
+		expectedAID   int
+		expectExpAud  bool
+		err           bool
 	}{
-		{"V1", "V", 1, false},
-		{"A2", "A", 2, false},
-		{"V0", "", 0, true},
-		{"A0", "", 0, true},
-		{"V1A1", "", 0, true},
-		{"abc", "", 0, true},
-		{"V", "", 0, true},
-		{"", "", 0, true},
+		{"V1", 1, 0, false, false},
+		{"V1A2", 1, 2, true, false},
+		{"V0", 0, 0, false, true},
+		{"A0", 0, 0, false, true},
+		{"V0A1", 0, 0, false, true},
+		{"A2", 0, 0, false, true},
+		{"abc", 0, 0, false, true},
+		{"V", 0, 0, false, true},
+		{"", 0, 0, false, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.camID, func(t *testing.T) {
-			hw, id, err := ParseCameraID(tt.camID)
+			vID, aID, hasExplicit, err := ParseCameraID(tt.camID)
 			if (err != nil) != tt.err {
 				t.Errorf("ParseCameraID() error = %v, wantErr %v", err, tt.err)
 				return
 			}
-			if hw != tt.expectedHW {
-				t.Errorf("ParseCameraID() hw = %v, want %v", hw, tt.expectedHW)
+			if vID != tt.expectedVID {
+				t.Errorf("ParseCameraID() vID = %v, want %v", vID, tt.expectedVID)
 			}
-			if id != tt.expectedID {
-				t.Errorf("ParseCameraID() id = %v, want %v", id, tt.expectedID)
+			if aID != tt.expectedAID {
+				t.Errorf("ParseCameraID() aID = %v, want %v", aID, tt.expectedAID)
+			}
+			if hasExplicit != tt.expectExpAud {
+				t.Errorf("ParseCameraID() hasExplicit = %v, want %v", hasExplicit, tt.expectExpAud)
 			}
 		})
 	}
