@@ -84,8 +84,8 @@ The suite enforces a strict dichotomy between Client and Server roles regarding 
 1.  **Build:** Unprivileged compilation via `build.sh`.
 2.  **Install:** Executing the compiled binary as root triggers `internal/sysutils.InstallBinary()`.
 3.  **Deploy:** The binaries place themselves into `/opt/VLX_FrameFlow/bin/` and configure templates in `/opt/VLX_FrameFlow/etc/`.
-4.  **Run (CLIENT):** On the SBC/Field Unit, background services must strictly execute as the dedicated, unprivileged `$FRAMEFLOW_USER`. Systemd management uses User-Space Systemd (`systemctl --user`). Unit files are generated in `~/.config/systemd/user/` and explicitly target `default.target`. **Important:** Systemd Lingering (`loginctl enable-linger`) must be enabled by root during initial setup to allow background execution without an active SSH session.
-5.  **Run (SERVER):** On the VPS/Relay Node, the main daemon strictly requires `root` execution (UID 0) to orchestrate routing and UFW firewall rules. Systemd management uses System-Space Systemd (`/etc/systemd/system/`) and targets `multi-user.target`. To maintain security, the server relies on **Privilege Dropping** (`User=`, `Group=`) inside the unit templates for specific exposed services (like MediaMTX) to minimize the blast radius.
+4.  **Run (CLIENT):** On the SBC/Field Unit, background services must strictly execute as the dedicated, unprivileged `$FRAMEFLOW_USER`. Systemd management uses User-Space Systemd (`systemctl --user`). Unit files are generated in `~/.config/systemd/user/` and explicitly target `default.target`. **Important:** Systemd Lingering (`loginctl enable-linger`) must be enabled by root during initial setup to allow background execution without an active SSH session. All Client CLI modules implement strict runtime constraints preventing root execution (`if os.Geteuid() == 0`).
+5.  **Run (SERVER):** On the VPS/Relay Node, the main daemon strictly requires `root` execution (UID 0) to orchestrate routing and UFW firewall rules. Systemd management uses System-Space Systemd (`/etc/systemd/system/`) and targets `multi-user.target`. To maintain security, the server relies on **Privilege Dropping** (`User=`, `Group=`) inside the unit templates for specific exposed services (like MediaMTX) to minimize the blast radius. ALL Server orchestrator CLI modules enforce a root guard requiring root execution (`if os.Geteuid() != 0`).
 
 ### AP Module Privilege Escalation Pattern
 
@@ -130,6 +130,9 @@ The system implements several highly specific optimizations and fail-safes per m
 
 ### MediaMTX & Bonding (v2ray)
 - **Dynamic Architecture Resolution:** During initialization and updates, the system dynamically checks `runtime.GOARCH` to resolve and download correct asset architectures. This strictly prevents "Exec format error" failures when deploying across heterogeneous ARM and x86_64 fleets.
+- **Static Configuration:** MediaMTX natively operates as a static systemd user service with a statically generated configuration at `$VLXsuite_DIR/etc/mediamtx.settings`.
+- **Protocol Configuration:** MediaMTX is strictly configured to enable WebRTC, SRT, RTMP, and the internal API, while explicitly disabling RTSP, HLS, and WebTransport to optimize performance and security.
+- **Hook Distinction:** The `wificam` path acts as an RTMP-to-SRT auto-forwarder using a `runOnReady` hook, whereas the `cameraman` path relies on direct V4L2-to-SRT ingestion utilizing a `runOnInit` hook.
 
 ## Filesystem Structure
 

@@ -173,6 +173,8 @@ Manages video encoding pipelines. This service is best utilized in combination w
 
 Manages the local **MediaMTX** server (SRT protocol only). Combining this service with the suite's Access Point (AP) mode is crucial for achieving optimal performance and reliability when interfacing with devices running rigid or proprietary software, such as GoPro cameras. Also exposed via REST (`/api/v1/mediamtx/start|stop|status`).
 
+**Note:** MediaMTX natively operates as a static systemd user service (`frameflow-mediamtx.service` with `Restart=always`). It directly executes the MediaMTX binary using the static configuration file located at `$VLXsuite_DIR/etc/mediamtx.settings`, deprecating older dynamic `systemd-run` and temporary `.yml` generation strategies.
+
 **Functions:**
 
 - **Client Role:** Configured as a lightweight "Push" node. Automatically pushes local camera streams over the MLVPN tunnel (`10.1.10.x`) directly to the Server.
