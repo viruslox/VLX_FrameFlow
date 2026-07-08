@@ -44,17 +44,20 @@ func (a *API) RegisterRoutes(r *gin.Engine) {
 		frameflow.POST("/client/start", HandleClientStart)
 		frameflow.POST("/client/stop", HandleClientStop)
 		frameflow.POST("/client/status", HandleClientStatus)
+		frameflow.GET("/client/status", HandleClientStatus)
 		frameflow.POST("/client/reset", HandleClientReset)
 
 		// AP
 		frameflow.POST("/ap/start", HandleAPStart)
 		frameflow.POST("/ap/stop", HandleAPStop)
 		frameflow.POST("/ap/status", HandleAPStatus)
+		frameflow.GET("/ap/status", HandleAPStatus)
 
 		// Bonding
 		frameflow.POST("/bonding/start", HandleBondingStart)
 		frameflow.POST("/bonding/stop", HandleBondingStop)
 		frameflow.POST("/bonding/status", HandleBondingStatus)
+		frameflow.GET("/bonding/status", HandleBondingStatus)
 	}
 
 	// Group: /api/cameraman
@@ -63,6 +66,7 @@ func (a *API) RegisterRoutes(r *gin.Engine) {
 		cameramanGroup.POST("/start", HandleStreamStart)
 		cameramanGroup.POST("/stop", HandleStreamStop)
 		cameramanGroup.POST("/status", HandleStreamStatus)
+		cameramanGroup.GET("/status", HandleStreamStatus)
 		cameramanGroup.POST("/list-dev", HandleStreamListDev)
 	}
 
@@ -72,6 +76,7 @@ func (a *API) RegisterRoutes(r *gin.Engine) {
 		mediamtxGroup.POST("/start", HandleMediaMTXStart)
 		mediamtxGroup.POST("/stop", HandleMediaMTXStop)
 		mediamtxGroup.POST("/status", HandleMediaMTXStatus)
+		mediamtxGroup.GET("/status", HandleMediaMTXStatus)
 	}
 
 	// Group: /api/gps
@@ -80,6 +85,7 @@ func (a *API) RegisterRoutes(r *gin.Engine) {
 		gpsGroup.POST("/start", HandleGPSStart)
 		gpsGroup.POST("/stop", HandleGPSStop)
 		gpsGroup.POST("/status", HandleGPSStatus)
+		gpsGroup.GET("/status", HandleGPSStatus)
 	}
 
 	// Server Relay

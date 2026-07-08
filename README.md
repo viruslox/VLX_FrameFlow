@@ -38,7 +38,7 @@ The project has evolved into a multi-binary ecosystem to ensure role-specific fu
 | **`internal/`** | Core logic (storage, system, network, package management). |
 
 ### API & Frontend
-The backend API is built using the highly performant **Gin** framework (`github.com/gin-gonic/gin`) serving a standardized REST structure (`/api/v1/...`).
+The backend API is built using the highly performant **Gin** framework (`github.com/gin-gonic/gin`) serving a standardized REST structure (`/api/...`).
 
 The **Control Panel Frontend** is a compiled **Svelte** application. It dynamically polls the backend via parallel REST calls (`Promise.all`), features a semantic parser translating raw systemd statuses into visual states, and provides real-time streaming text consoles utilizing `ansi-to-html`.
 
@@ -129,6 +129,14 @@ curl -X POST http://127.0.0.1:9090/api/v1/relay/cameraman/start \
 ```
 The Server seamlessly forwards this request (headers and body) through the MLVPN tunnel, where the Client natively executes the command and returns the JSON response back to your local application.
 
+**Example 2:**
+Send a GET request to check the Client's MediaMTX status:
+```bash
+curl http://127.0.0.1:9090/api/v1/relay/mediamtx/status
+```
+
+*Note: The FrameFlow relay binds to port `9090`. If your external webhook (e.g., ChatBridge) is targeting `http://127.0.0.1:8080/api/...`, it will result in a 404 error because port `8080` is strictly bound to the frontend UI.*
+
 ---
 
 ### Network Flow Control
@@ -144,7 +152,7 @@ Available commands:
 - **`server start` / `server status` / `server stop`**: Manage server components.
 - **`server api start` / `server api status` / `server api stop`**: Manage the local API relay for forwarding commands to the remote Client via MLVPN.
 - **`client start` / `client status` / `client stop`**: Manage client components.
-- **`client reset`**: Restarts networking and bonding services. (Also exposed via `/api/v1/client/reset`).
+- **`client reset`**: Restarts networking and bonding services. (Also exposed via `/api/frameflow/client/reset`).
 - **`bonding`**: Displays MPTCP proxy and MLVPN tunnel status.
 - **`AP start`**: Activates HostAP (hotspot) on the first Wi-Fi interface.
 - **`AP stop`**: Stops HostAP and switches the first Wi-Fi interface back to managed client mode.
@@ -171,7 +179,7 @@ Manages video encoding pipelines. This service is best utilized in combination w
 ./vlx_frameflow mediamtx <start|stop|status>
 ```
 
-Manages the local **MediaMTX** server (SRT protocol only). Combining this service with the suite's Access Point (AP) mode is crucial for achieving optimal performance and reliability when interfacing with devices running rigid or proprietary software, such as GoPro cameras. Also exposed via REST (`/api/v1/mediamtx/start|stop|status`).
+Manages the local **MediaMTX** server (SRT protocol only). Combining this service with the suite's Access Point (AP) mode is crucial for achieving optimal performance and reliability when interfacing with devices running rigid or proprietary software, such as GoPro cameras. Also exposed via REST (`/api/mediamtx/start|stop|status`).
 
 **Note:** MediaMTX natively operates as a static systemd user service (`frameflow-mediamtx.service` with `Restart=always`). It directly executes the MediaMTX binary using the static configuration file located at `$VLXsuite_DIR/etc/mediamtx.settings`, deprecating older dynamic `systemd-run` and temporary `.yml` generation strategies.
 
@@ -186,7 +194,7 @@ Manages the local **MediaMTX** server (SRT protocol only). Combining this servic
 ./vlx_frameflow gps <start|stop|status>
 ```
 
-Manages GPS and telemetry services. This module acts as a resilient data pipeline, ensuring real-time location and telemetry data are consistently processed and transmitted regardless of network fluctuations. Also exposed via REST (`/api/v1/gps/start|stop|status`).
+Manages GPS and telemetry services. This module acts as a resilient data pipeline, ensuring real-time location and telemetry data are consistently processed and transmitted regardless of network fluctuations. Also exposed via REST (`/api/gps/start|stop|status`).
 
 - Controls **gpsd**.
 - Auto-detects USB / serial GPS hardware.
