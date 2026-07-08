@@ -41,13 +41,13 @@ The core API has transitioned to utilizing the highly performant `Gin` framework
 
 ### Operational Endpoints
 
-The unprivileged user interacts with the backend components via a standardized REST API structured primarily as `/api/v1/<module>/{start,stop,status,reset}`. Key operational endpoints include:
+The unprivileged user interacts with the backend components via a standardized REST API structured primarily as `/api/<module>/{start,stop,status,reset}`. Key operational endpoints include:
 
-- **`/api/v1/client/reset`**: Initiates a full reset of client networking and bonding.
-- **`/api/v1/gps/start` \| `stop` \| `status`**: Manages the transient systemd user unit for the GPS telemetry process.
-- **`/api/v1/mediamtx/start` \| `stop` \| `status`**: Controls the local MediaMTX static user service.
-- **`/api/v1/cameraman/start` \| `stop` \| `status`**: Orchestrates FFmpeg encoding pipelines directly to the MediaMTX API.
-- **`/api/v1/ap/start` \| `stop` \| `status`**: Triggers internal privilege escalation to manipulate `hostapd` and network interfaces.
+- **`/api/frameflow/client/reset`**: Initiates a full reset of client networking and bonding.
+- **`/api/gps/start` \| `stop` \| `status`**: Manages the transient systemd user unit for the GPS telemetry process.
+- **`/api/mediamtx/start` \| `stop` \| `status`**: Controls the local MediaMTX static user service.
+- **`/api/cameraman/start` \| `stop` \| `status`**: Orchestrates FFmpeg encoding pipelines directly to the MediaMTX API.
+- **`/api/frameflow/ap/start` \| `stop` \| `status`**: Triggers internal privilege escalation to manipulate `hostapd` and network interfaces.
 
 ## Unified Configuration Paradigm
 
