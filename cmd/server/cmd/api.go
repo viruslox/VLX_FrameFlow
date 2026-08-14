@@ -47,27 +47,26 @@ var apiStartCmd = &cobra.Command{
 			addr = fmt.Sprintf("127.0.0.1:%s", port)
 		}
 
-		// Resolve cert/key: prefer explicit config, else the standard install
-		// location. If both a cert and key are present, serve HTTPS with an
-		// OPTIONAL client cert (server-auth TLS); otherwise fall back to plain
-		// HTTP so existing local-only deployments keep working unchanged.
+		// Resolve cert/key/CA: prefer explicit config, else the standard install
+		// location. When a cert+key are present, serve HTTPS (server-auth TLS,
+		// client cert optional); otherwise fall back to plain HTTP so existing
+		// local-only deployments keep working unchanged.
 		certPath := backendCfg.ServerCrt
 		keyPath := backendCfg.ServerKey
-		caPath := backendCfg.ServerCA
-		if certPath == "" || keyPath == "" {
-			secDir := "/opt/VLX_FrameFlow/certs/"
-			if _, err := os.Stat(secDir); os.IsNotExist(err) {
-				secDir = "."
-			}
-			if certPath == "" {
-				certPath = filepath.Join(secDir, "server.crt")
-			}
-			if keyPath == "" {
-				keyPath = filepath.Join(secDir, "server.key")
-			}
-			if caPath == "" {
-				caPath = filepath.Join(secDir, "ca.crt")
-			}
+		var caPath string
+		secDir := "/opt/VLX_FrameFlow/certs/"
+		if _, err := os.Stat(secDir); os.IsNotExist(err) {
+			secDir = "."
+		}
+		if certPath == "" {
+			certPath = filepath.Join(secDir, "server.crt")
+		}
+		if keyPath == "" {
+			keyPath = filepath.Join(secDir, "server.key")
+		}
+		caPath = filepath.Join(secDir, "ca.crt")
+		if _, err := os.Stat(caPath); os.IsNotExist(err) {
+			caPath = "" // optional; StartServer tolerates an empty CA path
 		}
 
 		_, certErr := os.Stat(certPath)
