@@ -106,9 +106,16 @@ type CameramanRequest struct {
 }
 
 func (a *API) handleRelay(c *gin.Context) {
-	// Retrieve port from config or use 9090 as default
+	// Resolve the *remote* Client API endpoint on the far side of the MLVPN
+	// tunnel. This is deliberately separate from the Server's own BindPort
+	// (where this relay listens locally); conflating them breaks any setup
+	// where the two ports differ.
 	backendCfg := config.LoadBackendConfig("")
-	clientPort := backendCfg.BindPort
+	clientHost := backendCfg.RelayClientHost
+	if clientHost == "" {
+		clientHost = "10.1.10.2"
+	}
+	clientPort := backendCfg.RelayClientPort
 	if clientPort == "" {
 		clientPort = "9090"
 	}
@@ -116,7 +123,7 @@ func (a *API) handleRelay(c *gin.Context) {
 	path := c.Param("path")
 
 	// Construct the target HTTPS URL
-	targetURL := "https://10.1.10.2:" + clientPort + "/api" + path
+	targetURL := "https://" + clientHost + ":" + clientPort + "/api" + path
 	if c.Request.URL.RawQuery != "" {
 		targetURL += "?" + c.Request.URL.RawQuery
 	}
