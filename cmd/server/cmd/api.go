@@ -27,6 +27,12 @@ var apiStartCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// This is the SERVER binary; mark the role so role-aware config loading
+		// (e.g. skipping the Client-only bkend_* requirement in LoadBackendConfig)
+		// behaves correctly even when invoked directly as a subcommand rather
+		// than through the interactive menu.
+		os.Setenv("FRAMEFLOW_ROLE", "SERVER")
+
 		sysutils.Info("Starting local API relay server...")
 
 		backendCfg := config.LoadBackendConfig("")
