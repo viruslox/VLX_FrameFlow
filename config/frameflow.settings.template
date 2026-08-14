@@ -43,6 +43,13 @@ bind_port=9090
 # (comma-separated list of allowed CORS origins)
 allowed_origins="127.0.0.1"
 
+# Server Relay -> Client API target (SERVER role only)
+# Address of the remote Client API on the far side of the MLVPN tunnel, used by
+# the Server's transparent relay proxy. Leave at defaults unless the Client's
+# MLVPN IP or API port differs from the standard 10.1.10.2:9090.
+relay_client_host=10.1.10.2
+relay_client_port=9090
+
 # Backend Credentials
 bkend_user1=admin
 bkend_pass1=admin
