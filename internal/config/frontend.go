@@ -153,14 +153,22 @@ type BackendConfig struct {
 	AllowedOrigins []string
 	ServerCrt      string
 	ServerKey      string
+	// RelayClientHost/Port are the address of the *remote* Client API on the
+	// far side of the MLVPN tunnel, used by the Server's relay proxy. These are
+	// distinct from BindAddress/BindPort, which are where this Server's own
+	// relay listens locally. Defaults target the standard MLVPN client.
+	RelayClientHost string
+	RelayClientPort string
 }
 
 func LoadBackendConfig(customPath string) *BackendConfig {
-	config := &BackendConfig{
-		BindAddress:    "",
-		BindPort:       "9090",
-		Accounts:       make(map[string]string),
-		AllowedOrigins: []string{},
+		config := &BackendConfig{
+		BindAddress:     "",
+		BindPort:        "9090",
+		Accounts:        make(map[string]string),
+		AllowedOrigins:  []string{},
+		RelayClientHost: "10.1.10.2",
+		RelayClientPort: "9090",
 	}
 
 	var filepaths []string
@@ -231,6 +239,10 @@ func LoadBackendConfig(customPath string) *BackendConfig {
 					config.ServerCrt = value
 				} else if key == "server_key" {
 					config.ServerKey = value
+				} else if key == "relay_client_host" {
+					config.RelayClientHost = value
+				} else if key == "relay_client_port" {
+					config.RelayClientPort = value
 				}
 			}
 		}
@@ -265,6 +277,12 @@ func LoadBackendConfig(customPath string) *BackendConfig {
 	}
 	if envServerKey := os.Getenv("server_key"); envServerKey != "" {
 		config.ServerKey = envServerKey
+	}
+	if envRelayHost := os.Getenv("relay_client_host"); envRelayHost != "" {
+		config.RelayClientHost = envRelayHost
+	}
+	if envRelayPort := os.Getenv("relay_client_port"); envRelayPort != "" {
+		config.RelayClientPort = envRelayPort
 	}
 
 	if len(config.Accounts) == 0 {
