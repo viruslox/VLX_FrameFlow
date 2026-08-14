@@ -10,7 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// StartServer configures mTLS and starts the Gin API server.
 // StartServer starts the Gin API server over TLS (server-auth). If a CA file is
 // provided and readable, client certificates are verified when presented
 // (optional client auth); if caFile is empty or absent, the server still runs
