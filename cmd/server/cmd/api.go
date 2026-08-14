@@ -36,15 +36,53 @@ var apiStartCmd = &cobra.Command{
 		apiHandlers := api.NewAPI(tm)
 		apiHandlers.RegisterRoutes(r)
 
-		addr := fmt.Sprintf("127.0.0.1:%s", backendCfg.BindPort)
-		if backendCfg.BindPort == "" {
-			addr = "127.0.0.1:9090"
+		bindAddr := backendCfg.BindAddress
+		port := backendCfg.BindPort
+		if port == "" {
+			port = "9090"
+		}
+		addr := fmt.Sprintf("%s:%s", bindAddr, port)
+		if bindAddr == "" {
+			// Preserve prior default: bind loopback only when no address is set.
+			addr = fmt.Sprintf("127.0.0.1:%s", port)
 		}
 
-		sysutils.Info("Starting local HTTP relay server on %s", addr)
+		// Resolve cert/key: prefer explicit config, else the standard install
+		// location. If both a cert and key are present, serve HTTPS with an
+		// OPTIONAL client cert (server-auth TLS); otherwise fall back to plain
+		// HTTP so existing local-only deployments keep working unchanged.
+		certPath := backendCfg.ServerCrt
+		keyPath := backendCfg.ServerKey
+		caPath := backendCfg.ServerCA
+		if certPath == "" || keyPath == "" {
+			secDir := "/opt/VLX_FrameFlow/certs/"
+			if _, err := os.Stat(secDir); os.IsNotExist(err) {
+				secDir = "."
+			}
+			if certPath == "" {
+				certPath = filepath.Join(secDir, "server.crt")
+			}
+			if keyPath == "" {
+				keyPath = filepath.Join(secDir, "server.key")
+			}
+			if caPath == "" {
+				caPath = filepath.Join(secDir, "ca.crt")
+			}
+		}
 
-		if err := api.StartLocalServer(addr, r); err != nil {
-			sysutils.Error("Failed to start API server: %v", err)
+		_, certErr := os.Stat(certPath)
+		_, keyErr := os.Stat(keyPath)
+		if certErr == nil && keyErr == nil {
+			sysutils.Info("Starting HTTPS relay server on %s", addr)
+			if err := api.StartServer(addr, certPath, keyPath, caPath, r); err != nil {
+				sysutils.Error("Failed to start HTTPS API server: %v", err)
+			}
+		} else {
+			sysutils.Warning("Server cert/key not found (%s / %s); falling back to plain HTTP. The frontend requires HTTPS -- generate certs to enable it.", certPath, keyPath)
+			sysutils.Info("Starting local HTTP relay server on %s", addr)
+			if err := api.StartLocalServer(addr, r); err != nil {
+				sysutils.Error("Failed to start API server: %v", err)
+			}
 		}
 	},
 }
