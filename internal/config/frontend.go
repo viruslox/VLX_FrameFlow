@@ -285,7 +285,11 @@ func LoadBackendConfig(customPath string) *BackendConfig {
 		config.RelayClientPort = envRelayPort
 	}
 
-	if len(config.Accounts) == 0 {
+	// The SERVER role runs only the localhost relay, which sits behind the
+	// frontend's own auth and needs no backend accounts of its own. Requiring
+	// bkend_* there would wrongly impose a Client-only concept on the Server,
+	// so the accounts check applies to non-SERVER roles only.
+	if os.Getenv("FRAMEFLOW_ROLE") != "SERVER" && len(config.Accounts) == 0 {
 		log.Fatal("ERROR: Insecure configuration. At least one bkend_userX/bkend_passX pair must be provided in frameflow.settings.")
 	}
 

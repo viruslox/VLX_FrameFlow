@@ -14,7 +14,7 @@ var (
 )
 
 func main() {
-	if err := sysutils.CheckPermissions(); err != nil {
+	if err := sysutils.CheckServerPermissions(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
