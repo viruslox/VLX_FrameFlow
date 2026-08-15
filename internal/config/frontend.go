@@ -19,6 +19,11 @@ type FrontendConfig struct {
 	BackendPort string
 	ClientCrt   string
 	ClientKey   string
+	// UseRelay selects how the served UI reaches the FrameFlow API. false =
+	// this frontend talks to a local Client (SBC) API directly (api/<module>).
+	// true = this frontend fronts a Server (VM), so all module calls must be
+	// routed through the relay (api/v1/relay/<module>) to reach the remote SBC.
+	UseRelay bool
 }
 
 func trimQuotes(s string) string {
@@ -90,6 +95,9 @@ func LoadConfig(customPath string) *FrontendConfig {
 					config.BackendAddr = value
 				} else if key == "backend port" || key == "backend_port" {
 					config.BackendPort = value
+				} else if key == "use_relay" {
+					v := strings.ToLower(value)
+					config.UseRelay = (v == "true" || v == "yes" || v == "1")
 				} else if key == "FF_GUI_USER" {
 					config.AuthUser = value
 				} else if key == "FF_GUI_PASS" {
@@ -137,6 +145,10 @@ func LoadConfig(customPath string) *FrontendConfig {
 	}
 	if envClientKey := os.Getenv("client_key"); envClientKey != "" {
 		config.ClientKey = envClientKey
+	}
+	if envUseRelay := os.Getenv("use_relay"); envUseRelay != "" {
+		v := strings.ToLower(envUseRelay)
+		config.UseRelay = (v == "true" || v == "yes" || v == "1")
 	}
 
 	if config.AuthUser == "" || config.AuthPass == "" {

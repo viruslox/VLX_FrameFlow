@@ -41,7 +41,7 @@ var apiStartCmd = &cobra.Command{
 
 		tm := api.NewTicketManager()
 		apiHandlers := api.NewAPI(tm)
-		apiHandlers.RegisterRoutes(r)
+		apiHandlers.RegisterRoutes(r, true) // SERVER: relay-only routes
 
 		bindAddr := backendCfg.BindAddress
 		port := backendCfg.BindPort

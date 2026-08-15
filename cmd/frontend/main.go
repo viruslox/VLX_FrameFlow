@@ -32,6 +32,14 @@ func main() {
 		})
 	})
 
+	// Runtime mode flag for the served UI (unauthenticated: it is not a secret,
+	// just tells the SPA whether to call the API directly or via the relay).
+	r.GET("/config", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"use_relay": cfg.UseRelay,
+		})
+	})
+
 	// Setup BasicAuth
 	auth := gin.BasicAuth(gin.Accounts{
 		cfg.AuthUser: cfg.AuthPass,

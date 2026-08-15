@@ -31,8 +31,23 @@ func NewAPI(tm *TicketManager) *API {
 	}
 }
 
-func (a *API) RegisterRoutes(r *gin.Engine) {
+// RegisterRoutes wires the HTTP routes. The Client (isServer=false) exposes the
+// full set of local handlers that act on this machine's hardware/services. The
+// Server (isServer=true) exposes ONLY the transparent relay: it must never run
+// any local handler, since those commands belong to the remote SBC. This keeps
+// the Client and Server responsibilities strictly separated -- a Server that
+// registered local routes would wrongly execute SBC commands on the VM.
+func (a *API) RegisterRoutes(r *gin.Engine, isServer bool) {
 	api := r.Group("/api")
+
+	if isServer {
+		// SERVER: relay only. No local handlers, no local WebSocket ticket.
+		// Companion apps and the frontend reach the SBC via /api/v1/relay/*.
+		api.Any("/v1/relay/*path", a.handleRelay)
+		return
+	}
+
+	// CLIENT: full local API acting on this device.
 
 	// WebSocket Auth Ticket
 	api.GET("/ws/ticket", a.handleWSTicket)
@@ -87,9 +102,6 @@ func (a *API) RegisterRoutes(r *gin.Engine) {
 		gpsGroup.POST("/status", HandleGPSStatus)
 		gpsGroup.GET("/status", HandleGPSStatus)
 	}
-
-	// Server Relay
-	api.Any("/v1/relay/*path", a.handleRelay)
 }
 
 func (a *API) handleWSTicket(c *gin.Context) {

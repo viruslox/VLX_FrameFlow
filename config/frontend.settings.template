@@ -8,11 +8,19 @@ bind_port=8080
 FF_GUI_USER=frontend
 FF_GUI_PASS=frontend
 
-# Target Backend Connection Parameters (Client API)
+# Target Backend Connection Parameters
 # (connection to backend: optional, if empty set to localhost)
 backend_address=127.0.0.1
 # (connection to backend: optional, if empty set to 9090)
 backend_port=9090
+
+# Operating mode:
+#   use_relay=false -> this frontend runs on the SBC and talks to the local
+#                      Client API directly (api/<module>).
+#   use_relay=true  -> this frontend fronts a Server/VM; all module commands are
+#                      routed through the relay (api/v1/relay/<module>) to reach
+#                      the remote SBC. Use this when serving the panel from the VM.
+use_relay=false
 
 # Zero-Trust mTLS Credentials
 # Used by the Svelte Control Panel to authenticate against the backend API.

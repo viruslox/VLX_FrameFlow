@@ -6,13 +6,24 @@
   const ansiConvert = new AnsiToHtml({ escapeXML: true });
   let consoleOutput = "";
 
+  // In relay mode (frontend fronting a Server/VM) every module call must go
+  // through api/v1/relay/... to reach the remote SBC. In direct mode (frontend
+  // on the SBC itself) calls hit the local api/... routes. The prefix is chosen
+  // at runtime from the backend's /config, so the same build serves both modes.
+  let apiBase = "api";
+
+  function ep(path) {
+    // path is the module path WITHOUT the leading "api/", e.g. "frameflow/client/status"
+    return `${apiBase}/${path}`;
+  }
+
   const modules = [
-    { id: 'client', name: "Network Client", endpoints: { start: "api/frameflow/client/start", stop: "api/frameflow/client/stop", status: "api/frameflow/client/status", reset: "api/frameflow/client/reset" } },
-    { id: 'ap', name: "Access Point", endpoints: { start: "api/frameflow/ap/start", stop: "api/frameflow/ap/stop", status: "api/frameflow/ap/status" } },
-    { id: 'bonding', name: "Bonding", endpoints: { start: "api/frameflow/bonding/start", stop: "api/frameflow/bonding/stop", status: "api/frameflow/bonding/status" } },
-    { id: 'gps', name: "GPS Tracking", endpoints: { start: "api/gps/start", stop: "api/gps/stop", status: "api/gps/status" } },
-    { id: 'mediamtx', name: "MediaMTX Core", endpoints: { start: "api/mediamtx/start", stop: "api/mediamtx/stop", status: "api/mediamtx/status" } },
-    { id: 'cameraman', name: "Cameraman", endpoints: { start: "api/cameraman/start", stop: "api/cameraman/stop", status: "api/cameraman/status", listDev: "api/cameraman/list-dev" } },
+    { id: 'client', name: "Network Client", paths: { start: "frameflow/client/start", stop: "frameflow/client/stop", status: "frameflow/client/status", reset: "frameflow/client/reset" } },
+    { id: 'ap', name: "Access Point", paths: { start: "frameflow/ap/start", stop: "frameflow/ap/stop", status: "frameflow/ap/status" } },
+    { id: 'bonding', name: "Bonding", paths: { start: "frameflow/bonding/start", stop: "frameflow/bonding/stop", status: "frameflow/bonding/status" } },
+    { id: 'gps', name: "GPS Tracking", paths: { start: "gps/start", stop: "gps/stop", status: "gps/status" } },
+    { id: 'mediamtx', name: "MediaMTX Core", paths: { start: "mediamtx/start", stop: "mediamtx/stop", status: "mediamtx/status" } },
+    { id: 'cameraman', name: "Cameraman", paths: { start: "cameraman/start", stop: "cameraman/stop", status: "cameraman/status", listDev: "cameraman/list-dev" } },
   ];
 
   let serviceStates = {};
@@ -22,9 +33,23 @@
   let availableDevices = [];
   let selectedDevice = "";
 
+  const loadMode = async () => {
+    // Decide direct vs relay base from the frontend's own /config. In relay
+    // mode all module calls are prefixed with v1/relay/ so they reach the
+    // remote SBC through the Server's transparent proxy.
+    try {
+      const res = await fetch("config");
+      const data = await res.json();
+      apiBase = data.use_relay ? "api/v1/relay" : "api";
+    } catch (err) {
+      // Fall back to direct mode if /config is unavailable.
+      apiBase = "api";
+    }
+  };
+
   const fetchDevList = async () => {
     try {
-      const res = await fetch("api/cameraman/list-dev", { method: "POST" });
+      const res = await fetch(ep("cameraman/list-dev"), { method: "POST" });
       const data = await res.json();
       const output = data.output || "";
 
@@ -74,7 +99,7 @@
 
   const logDevList = async () => {
     try {
-      const res = await fetch("api/cameraman/list-dev", { method: "POST" });
+      const res = await fetch(ep("cameraman/list-dev"), { method: "POST" });
       const data = await res.json();
       logToConsole(data.output);
       fetchDevList(); // refresh dropdown too
@@ -86,7 +111,7 @@
   const fetchStatuses = async () => {
     try {
       const results = await Promise.all(
-        modules.map(m => fetch(m.endpoints.status, { method: "POST" }).then(res => res.json()).catch(() => ({ status: 'error' })))
+        modules.map(m => fetch(ep(m.paths.status), { method: "POST" }).then(res => res.json()).catch(() => ({ status: 'error' })))
       );
 
       let newStates = {};
@@ -149,7 +174,8 @@
     consoleOutput = "";
   }
 
-  onMount(() => {
+  onMount(async () => {
+    await loadMode();
     fetchStatuses();
     fetchDevList();
     pollingInterval = setInterval(fetchStatuses, 5000);
@@ -280,14 +306,14 @@
           {/if}
 
           {#if mod.id !== 'bonding'}
-            <button on:click={() => execCommand(mod.name, mod.endpoints.start, 'Start', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Start</button>
-            <button on:click={() => execCommand(mod.name, mod.endpoints.stop, 'Stop', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Stop</button>
+            <button on:click={() => execCommand(mod.name, ep(mod.paths.start), 'Start', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Start</button>
+            <button on:click={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Stop</button>
           {/if}
           {#if mod.id !== 'bonding'}
-            <button on:click={() => execCommand(mod.name, mod.endpoints.status, 'Status', null)}>Status</button>
+            <button on:click={() => execCommand(mod.name, ep(mod.paths.status), 'Status', null)}>Status</button>
           {/if}
-          {#if mod.endpoints.reset}
-            <button on:click={() => execCommand(mod.name, mod.endpoints.reset, 'Reset')}>Reset</button>
+          {#if mod.paths.reset}
+            <button on:click={() => execCommand(mod.name, ep(mod.paths.reset), 'Reset')}>Reset</button>
           {/if}
         </div>
       </div>
