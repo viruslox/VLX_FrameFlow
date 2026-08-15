@@ -60,7 +60,7 @@ func TestAPI_FrameFlowBonding(t *testing.T) {
 	tm := NewTicketManager()
 	api := NewAPI(tm)
 	router := gin.New()
-	api.RegisterRoutes(router)
+	api.RegisterRoutes(router, false) // test exercises local Client routes
 
 	req, _ := http.NewRequest(http.MethodPost, "/api/frameflow/bonding/status", nil)
 	w := httptest.NewRecorder()
