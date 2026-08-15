@@ -115,7 +115,7 @@ var apiStartCmd = &cobra.Command{
 
 		tm := api.NewTicketManager()
 		apiHandlers := api.NewAPI(tm)
-		apiHandlers.RegisterRoutes(r)
+		apiHandlers.RegisterRoutes(r, false) // CLIENT: full local routes
 
 		r.GET("/ws", func(c *gin.Context) {
 			wsHub.HandleWebSocket(c, tm)
