@@ -20,12 +20,13 @@ describe('WebSocket connection logic', () => {
     window.location = { hostname: 'localhost', protocol: 'http:', host: 'localhost' };
 
     // Mock global fetch
-    global.fetch = vi.fn(() =>
-      Promise.resolve({
+    global.fetch = vi.fn((url) => {
+      if (url === 'config') return Promise.resolve({ ok: true, json: () => Promise.resolve({ use_relay: false }) });
+      return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ ticket: 'mock-ticket' }),
-      })
-    );
+      });
+    });
 
     // Mock global WebSocket
     global.WebSocket = MockWebSocket;
@@ -88,12 +89,13 @@ describe('WebSocket connection logic', () => {
     vi.useFakeTimers();
     let connections = 0;
 
-    global.fetch = vi.fn(() =>
-      Promise.resolve({
+    global.fetch = vi.fn((url) => {
+      if (url === 'config') return Promise.resolve({ ok: true, json: () => Promise.resolve({ use_relay: false }) });
+      return Promise.resolve({
         ok: false,
         status: 500,
-      })
-    );
+      });
+    });
 
     connectWebSocket();
 
@@ -104,7 +106,7 @@ describe('WebSocket connection logic', () => {
     // Fast forward to after the setTimeout
     await vi.advanceTimersByTimeAsync(3000);
 
-    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch).toHaveBeenCalledTimes(3);
 
     vi.useRealTimers();
   });

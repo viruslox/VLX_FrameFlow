@@ -11,12 +11,30 @@ export const connectionStatus = writable("disconnected");
 export async function connectWebSocket() {
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
+  // Resolve direct vs relay mode once. In relay mode the ticket must be
+  // obtained from the SBC through the Server relay (api/v1/relay/ws/ticket),
+  // since the WebSocket that /ws tunnels to is validated on the SBC. The /ws
+  // URL itself is unchanged: the frontend proxy forwards it to the Server,
+  // which tunnels it on to the SBC.
+  let ticketPath = "api/ws/ticket";
+  try {
+    const cfgRes = await fetch("config");
+    if (cfgRes.ok) {
+      const cfg = await cfgRes.json();
+      if (cfg.use_relay) {
+        ticketPath = "api/v1/relay/ws/ticket";
+      }
+    }
+  } catch (err) {
+    // Fall back to direct mode ticket path.
+  }
+
   const connect = async () => {
     connectionStatus.set("connecting");
 
     let ticket = "";
     try {
-      const res = await fetch("api/ws/ticket");
+      const res = await fetch(ticketPath);
       if (res.ok) {
         const data = await res.json();
         ticket = data.ticket;
