@@ -38,7 +38,7 @@ The project has evolved into a multi-binary ecosystem to ensure role-specific fu
 | **`internal/`** | Core logic (storage, system, network, package management). |
 
 ### API & Frontend
-The backend API is built using the highly performant **Gin** framework (`github.com/gin-gonic/gin`) serving a standardized REST structure (`/api/...`).
+The backend API is built using the highly performant **Gin** framework (`github.com/gin-gonic/gin`) serving a standardized REST structure (`/api/...`). Note that status endpoints support both `POST` and `GET` requests.
 
 The **Control Panel Frontend** is a compiled **Svelte** application. It dynamically polls the backend via parallel REST calls (`Promise.all`), features a semantic parser translating raw systemd statuses into visual states, and provides real-time streaming text consoles utilizing `ansi-to-html`.
 
@@ -118,7 +118,7 @@ All runtime modules are intended to be executed by the **dedicated service user*
 The **Server** acts as a transparent reverse proxy, relaying local API requests to the remote **Client** (SBC) over the secure MLVPN tunnel (`10.1.10.x`). This enables companion applications (e.g., a Twitch ChatBridge) running on the Server to control the Client securely.
 
 **Flow:**
-*   `Twitch Chat` -> `ChatBridge Webhook` -> `FrameFlow Server Relay (127.0.0.1)` -> `MLVPN Tunnel` -> `FrameFlow Client API (10.1.10.2)`
+*   `Twitch Chat` -> `ChatBridge Webhook` -> `FrameFlow Server Relay (<bind_address>)` -> `MLVPN Tunnel` -> `FrameFlow Client API (<relay_client_host>)`
 
 **Example:**
 Send an HTTP POST to the local Server to start the Client's cameraman:
@@ -135,7 +135,7 @@ Send a GET request to check the Client's MediaMTX status:
 curl http://127.0.0.1:9090/api/v1/relay/mediamtx/status
 ```
 
-*Note: The FrameFlow relay binds to port `9090`. If your external webhook (e.g., ChatBridge) is targeting `http://127.0.0.1:8080/api/...`, it will result in a 404 error because port `8080` is strictly bound to the frontend UI.*
+*Note: The FrameFlow relay binds to `<bind_address>:<bind_port>` (defaulting to 127.0.0.1:9090) and serves HTTPS if certificates are configured. If your external webhook (e.g., ChatBridge) is targeting `http://127.0.0.1:8080/api/...`, it will result in a 404 error because port `8080` is strictly bound to the frontend UI.*
 
 ---
 
@@ -242,6 +242,9 @@ Note: Adjust the port (`8080` by default) to match your `vlx_frontend` bind port
 | `MLVPN_SERVER_IP` | The remote server IP for MLVPN (UDP traffic). |
 | `SHADOWSOCKS_SERVER_IPS` | The remote server IP(s) for Shadowsocks bonding (TCP proxy traffic). |
 | `AP_PASSWORD` | WPA2 passphrase for the generated Access Point. Automatically generated if left empty. |
+| `relay_client_host` | The remote Client API IP accessed via MLVPN tunnel (default: `10.1.10.2`). |
+| `relay_client_port` | The remote Client API Port accessed via MLVPN tunnel (default: `9090`). |
+| `use_relay` | For Frontend settings: `true` routes all UI module commands through the relay (`api/v1/relay/...`), useful when hosting UI on Server. `false` targets local Client API. |
 
 **Note on Dual-Stack Bonding:** `SHADOWSOCKS_SERVER_IPS` natively supports Dual-Stack environments. You can provide comma-separated values (e.g., `"34.65.xx.xx, 2001:db8::1"`) to establish concurrent IPv4 and IPv6 tunnels simultaneously.
 
