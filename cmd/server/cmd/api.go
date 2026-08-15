@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -42,6 +46,43 @@ var apiStartCmd = &cobra.Command{
 		tm := api.NewTicketManager()
 		apiHandlers := api.NewAPI(tm)
 		apiHandlers.RegisterRoutes(r, true) // SERVER: relay-only routes
+
+		// WebSocket telemetry proxy (SERVER only). The SBC serves the real
+		// telemetry hub at wss://<client>:<port>/ws; the Server transparently
+		// tunnels the frontend's /ws upgrade there. httputil.ReverseProxy
+		// natively handles the WebSocket Upgrade over the existing TLS hop, so
+		// no manual frame pumping is needed. The ticket is validated on the SBC
+		// (the Server is a pure tunnel), so no auth logic lives here.
+		{
+			clientHost := backendCfg.RelayClientHost
+			if clientHost == "" {
+				clientHost = "10.1.10.2"
+			}
+			clientPort := backendCfg.RelayClientPort
+			if clientPort == "" {
+				clientPort = "9090"
+			}
+			wsTarget := &url.URL{
+				Scheme: "https",
+				Host:   fmt.Sprintf("%s:%s", clientHost, clientPort),
+			}
+			wsProxy := httputil.NewSingleHostReverseProxy(wsTarget)
+			wsProxy.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+			// Strip the browser Origin so the SBC's CheckOrigin treats this as a
+			// non-cross-origin (tunnelled) request and accepts the upgrade,
+			// mirroring how the HTTP relay avoids imposing CORS on relayed calls.
+			origDirector := wsProxy.Director
+			wsProxy.Director = func(req *http.Request) {
+				origDirector(req)
+				req.Header.Del("Origin")
+				req.Host = wsTarget.Host
+			}
+			r.GET("/ws", func(c *gin.Context) {
+				wsProxy.ServeHTTP(c.Writer, c.Request)
+			})
+		}
 
 		bindAddr := backendCfg.BindAddress
 		port := backendCfg.BindPort
