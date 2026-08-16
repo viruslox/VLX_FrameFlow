@@ -31,6 +31,10 @@ DB_DSN="/opt/VLX_FrameFlow/var/frameflow.db"
 # SRT target
 # Undergoes strict net/url validation before the encoding pipeline starts.
 SRT_URL="srt://frameflow-server.example:8890?streamid=publish:cam"
+# Remote MediaMTX/VisionBridge path prefix. The publish path is <CAM_PATH_PREFIX>_NN
+# (e.g. cameraman_01), where NN is the two-digit slot chosen at start time or
+# auto-assigned to the lowest free slot. Defaults to "cameraman" when unset.
+CAM_PATH_PREFIX="cameraman"
 # User-defined ceilings that the linear absolute-difference fallback algorithm strictly respects.
 CAM_MAX_RESOLUTION="1920x1080"
 CAM_MAX_FPS="30"

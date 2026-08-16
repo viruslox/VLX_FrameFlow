@@ -117,7 +117,7 @@ func TestGetVideoDevice(t *testing.T) {
 }
 
 func TestStartStream(t *testing.T) {
-	err := StartStream("V10")
+	err := StartStream("V10", "")
 	if err == nil {
 		t.Errorf("StartStream should fail for missing device")
 	}
@@ -125,14 +125,14 @@ func TestStartStream(t *testing.T) {
 
 func TestStopStream(t *testing.T) {
 	// Without a mock HTTP server, StopStream to 127.0.0.1:9997 will fail with connection refused.
-	err := StopStream("V1")
+	err := StopStream("01")
 	if err == nil {
 		t.Errorf("StopStream should fail without running mediamtx")
 	}
 }
 
 func TestStatusStream(t *testing.T) {
-	_, err := StatusStream("V1")
+	_, err := StatusStream("01")
 	if err == nil {
 		t.Errorf("StatusStream should fail when DB is not properly initialized for testing, got nil")
 	}
@@ -168,38 +168,51 @@ func TestPrepareStreamURL(t *testing.T) {
 
 func TestParseCameraID(t *testing.T) {
 	tests := []struct {
-		camID         string
-		expectedVID   int
-		expectedAID   int
-		expectExpAud  bool
-		err           bool
+		camID        string
+		expectedVID  int
+		expectedAID  int
+		hasVideo     bool
+		hasAudio     bool
+		expectExpAud bool
+		err          bool
 	}{
-		{"V1", 1, 0, false, false},
-		{"V1A2", 1, 2, true, false},
-		{"V0", 0, 0, false, true},
-		{"A0", 0, 0, false, true},
-		{"V0A1", 0, 0, false, true},
-		{"A2", 0, 0, false, true},
-		{"abc", 0, 0, false, true},
-		{"V", 0, 0, false, true},
-		{"", 0, 0, false, true},
+		{"V1", 1, 0, true, false, false, false},        // video + auto audio
+		{"V1A2", 1, 2, true, true, true, false},        // explicit audio
+		{"V1A0", 1, 0, true, false, true, false},       // video + silent
+		{"V0A1", 0, 1, false, true, true, false},       // audio-only + dark-grey video
+		{"V0", 0, 0, false, false, false, true},        // invalid: V0 alone
+		{"V0A0", 0, 0, false, false, false, true},      // invalid: nothing real
+		{"A0", 0, 0, false, false, false, true},        // invalid: no V prefix
+		{"A2", 0, 0, false, false, false, true},        // invalid: no V prefix
+		{"abc", 0, 0, false, false, false, true},
+		{"V", 0, 0, false, false, false, true},
+		{"", 0, 0, false, false, false, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.camID, func(t *testing.T) {
-			vID, aID, hasExplicit, err := ParseCameraID(tt.camID)
+			spec, err := ParseCameraID(tt.camID)
 			if (err != nil) != tt.err {
 				t.Errorf("ParseCameraID() error = %v, wantErr %v", err, tt.err)
 				return
 			}
-			if vID != tt.expectedVID {
-				t.Errorf("ParseCameraID() vID = %v, want %v", vID, tt.expectedVID)
+			if tt.err {
+				return
 			}
-			if aID != tt.expectedAID {
-				t.Errorf("ParseCameraID() aID = %v, want %v", aID, tt.expectedAID)
+			if spec.VideoID != tt.expectedVID {
+				t.Errorf("ParseCameraID() VideoID = %v, want %v", spec.VideoID, tt.expectedVID)
 			}
-			if hasExplicit != tt.expectExpAud {
-				t.Errorf("ParseCameraID() hasExplicit = %v, want %v", hasExplicit, tt.expectExpAud)
+			if spec.AudioID != tt.expectedAID {
+				t.Errorf("ParseCameraID() AudioID = %v, want %v", spec.AudioID, tt.expectedAID)
+			}
+			if spec.HasVideo != tt.hasVideo {
+				t.Errorf("ParseCameraID() HasVideo = %v, want %v", spec.HasVideo, tt.hasVideo)
+			}
+			if spec.HasAudio != tt.hasAudio {
+				t.Errorf("ParseCameraID() HasAudio = %v, want %v", spec.HasAudio, tt.hasAudio)
+			}
+			if spec.ExplicitAudio != tt.expectExpAud {
+				t.Errorf("ParseCameraID() ExplicitAudio = %v, want %v", spec.ExplicitAudio, tt.expectExpAud)
 			}
 		})
 	}
