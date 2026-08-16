@@ -114,7 +114,8 @@ func (a *API) handleWSTicket(c *gin.Context) {
 }
 
 type CameramanRequest struct {
-	Device string `json:"device"` // e.g. V1 or V1A2
+	Device string `json:"device"` // e.g. V1 or V1A2 (hardware selector; start only)
+	Slot   string `json:"slot"`   // two-digit NN path slot; addresses start/stop/status
 }
 
 func (a *API) handleRelay(c *gin.Context) {
@@ -328,13 +329,16 @@ func HandleStreamStart(c *gin.Context) {
 	}
 
 	// Validate syntax utilizing the updated ParseCameraID logic directly
-	_, _, _, err := cameraman.ParseCameraID(req.Device)
-	if err != nil {
+	if _, err := cameraman.ParseCameraID(req.Device); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device parameter format: " + err.Error()})
 		return
 	}
 
-	if err := cameraman.StartStream(req.Device); err != nil {
+	if req.Slot == "" {
+		req.Slot = c.Query("slot")
+	}
+
+	if err := cameraman.StartStream(req.Device, req.Slot); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -349,20 +353,24 @@ func HandleStreamStop(c *gin.Context) {
 			return
 		}
 	}
-	if req.Device == "" {
-		req.Device = c.Query("device")
+	if req.Slot == "" {
+		req.Slot = c.Query("slot")
+	}
+	// Back-compat: some callers may still pass the handle in the device field.
+	if req.Slot == "" && req.Device != "" {
+		req.Slot = req.Device
 	}
 
-	if req.Device == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "device parameter is required"})
+	if req.Slot == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "slot parameter is required"})
 		return
 	}
 
-	if err := cameraman.StopStream(req.Device); err != nil {
+	if err := cameraman.StopStream(req.Slot); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"status": "Stream " + req.Device + " stopped successfully."})
+	c.JSON(http.StatusOK, gin.H{"status": "Slot " + req.Slot + " stopped successfully."})
 }
 
 func HandleStreamStatus(c *gin.Context) {
@@ -373,11 +381,14 @@ func HandleStreamStatus(c *gin.Context) {
 			return
 		}
 	}
-	if req.Device == "" {
-		req.Device = c.Query("device")
+	if req.Slot == "" {
+		req.Slot = c.Query("slot")
+	}
+	if req.Slot == "" && req.Device != "" {
+		req.Slot = req.Device
 	}
 
-	if req.Device == "" {
+	if req.Slot == "" {
 		status, err := cameraman.StatusAllStreams()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -387,7 +398,7 @@ func HandleStreamStatus(c *gin.Context) {
 		return
 	}
 
-	status, err := cameraman.StatusStream(req.Device)
+	status, err := cameraman.StatusStream(req.Slot)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

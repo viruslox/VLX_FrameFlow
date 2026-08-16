@@ -9,7 +9,7 @@ import (
 )
 
 var cameramanCmd = &cobra.Command{
-	Use:   "cameraman <V1|V1A2> <start|stop|status> | devlist",
+	Use:   "cameraman <VxAy> [NN] start | cameraman <NN> stop|status | status | devlist",
 	Short: "Manages combined hardware AV encoding pipelines",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -18,73 +18,79 @@ var cameramanCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if len(args) == 0 {
-			cmd.Help()
-			return
-		}
-
-		action := ""
-		cameraID := args[0]
-
-		// Status display block
-		if len(args) == 1 && cameraID == "status" {
-			out, err := cameraman.StatusAllStreams()
-			if err != nil {
-				fmt.Println(err)
-			} else {
-				fmt.Println(out)
+		// Single-word forms: aggregate status / device listing.
+		if len(args) == 1 {
+			switch args[0] {
+			case "status":
+				out, err := cameraman.StatusAllStreams()
+				if err != nil {
+					fmt.Println(err)
+				} else {
+					fmt.Println(out)
+				}
+			case "devlist":
+				out, err := cameraman.ListDevices()
+				if err != nil {
+					fmt.Println(err)
+				} else {
+					fmt.Println(out)
+				}
+			default:
+				fmt.Println("Insufficient arguments. Expected: cameraman <VxAy> [NN] start | cameraman <NN> stop|status")
+				os.Exit(1)
 			}
 			return
 		}
 
-		// Device list block
-		if len(args) == 1 && cameraID == "devlist" {
-			out, err := cameraman.ListDevices()
-			if err != nil {
-				fmt.Println(err)
-			} else {
-				fmt.Println(out)
-			}
-			return
-		}
-
-		if len(args) < 2 {
-			fmt.Println("Insufficient arguments. Expected: cameraman <V1|V1A2> <start|stop|status>")
-			os.Exit(1)
-		}
-
-		action = args[1]
-
-		// Validate syntax formatting before triggering the backend
-		_, _, _, err := cameraman.ParseCameraID(cameraID)
-		if err != nil {
-			fmt.Printf("Error parsing camera ID: %v\n", err)
-			os.Exit(1)
-		}
+		// The action is always the final argument.
+		action := args[len(args)-1]
 
 		switch action {
 		case "start":
+			// cameraman <VxAy> start          (auto-assign NN)
+			// cameraman <VxAy> <NN> start
+			cameraID := args[0]
+			slot := ""
+			if len(args) == 3 {
+				slot = args[1]
+			} else if len(args) != 2 {
+				fmt.Println("Usage: cameraman <VxAy> [NN] start")
+				os.Exit(1)
+			}
+			if _, err := cameraman.ParseCameraID(cameraID); err != nil {
+				fmt.Printf("Error parsing camera ID: %v\n", err)
+				os.Exit(1)
+			}
 			fmt.Printf("Starting stream %s...\n", cameraID)
-			err = cameraman.StartStream(cameraID)
-			if err != nil {
+			if err := cameraman.StartStream(cameraID, slot); err != nil {
 				fmt.Printf("Error starting stream: %v\n", err)
 				os.Exit(1)
 			}
 			fmt.Printf("Stream %s started successfully.\n", cameraID)
 
 		case "stop":
-			fmt.Printf("Stopping stream %s...\n", cameraID)
-			err := cameraman.StopStream(cameraID)
-			if err != nil {
+			// cameraman <NN> stop
+			if len(args) != 2 {
+				fmt.Println("Usage: cameraman <NN> stop")
+				os.Exit(1)
+			}
+			slot := args[0]
+			fmt.Printf("Stopping slot %s...\n", slot)
+			if err := cameraman.StopStream(slot); err != nil {
 				fmt.Printf("Error stopping stream: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Stream %s stopped successfully.\n", cameraID)
+			fmt.Printf("Slot %s stopped successfully.\n", slot)
 
 		case "status":
-			out, err := cameraman.StatusStream(cameraID)
+			// cameraman <NN> status
+			if len(args) != 2 {
+				fmt.Println("Usage: cameraman <NN> status")
+				os.Exit(1)
+			}
+			out, err := cameraman.StatusStream(args[0])
 			if err != nil {
-				fmt.Printf("Error checking status for stream %s: %v\n", cameraID, err)
+				fmt.Printf("Error checking status for slot %s: %v\n", args[0], err)
 			} else {
 				fmt.Println(out)
 			}
