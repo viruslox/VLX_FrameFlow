@@ -360,7 +360,7 @@
           {#if mod.id === 'cameraman'}
             <button disabled={!selectedCameraId} title={selectedCameraId ? '' : 'Pick a video and/or audio source'}
               on:click={() => execCommand(mod.name, ep(mod.paths.start), 'Start', { device: selectedCameraId, slot: slotStr })}>Start</button>
-            <button on:click={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', { slot: slotStr })}>Stop</button>
+            <button disabled={!slotStr} title={slotStr ? '' : 'Enter the NN of the slot to stop'} on:click={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', { slot: slotStr })}>Stop</button>
             <button on:click={() => execCommand(mod.name, ep(mod.paths.status), 'Status', slotStr ? { slot: slotStr } : null)}>Status</button>
           {:else if mod.id !== 'bonding'}
             <button on:click={() => execCommand(mod.name, ep(mod.paths.start), 'Start', null)}>Start</button>

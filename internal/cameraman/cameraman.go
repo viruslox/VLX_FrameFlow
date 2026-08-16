@@ -78,20 +78,33 @@ func init() {
 		return
 	}
 
-	// Boot sync: restart each running slot from its stored hardware selector.
+	// Boot sync: resume each previously-running slot from its stored hardware
+	// selector. Collect the rows first, then clear the stale running flags so
+	// the slot/device overlap guards in StartStream don't reject the resume;
+	// each successful StartStream re-marks its own slot running.
+	type bootUnit struct{ slot, camID string }
+	var toResume []bootUnit
 	rows, err := db.Query("SELECT slot, cam_id FROM cameraman_devices WHERE status='running'")
 	if err == nil {
-		defer rows.Close()
 		for rows.Next() {
 			var slot, camID string
 			if err := rows.Scan(&slot, &camID); err == nil {
-				// We don't want to block init, so run in a goroutine
-				go func(camID, slot string) {
-					if err := StartStream(camID, slot); err != nil {
-						fmt.Printf("[Cameraman Boot] Auto-start failed %s (slot %s): %v\n", camID, slot, err)
-					}
-				}(camID, slot)
+				toResume = append(toResume, bootUnit{slot: slot, camID: camID})
 			}
+		}
+		rows.Close()
+	}
+	if len(toResume) > 0 {
+		if _, err := db.Exec("UPDATE cameraman_devices SET status='stopped' WHERE status='running'"); err != nil {
+			fmt.Printf("[Cameraman Boot] Failed to clear stale running flags: %v\n", err)
+		}
+		for _, u := range toResume {
+			// We don't want to block init, so run in a goroutine
+			go func(camID, slot string) {
+				if err := StartStream(camID, slot); err != nil {
+					fmt.Printf("[Cameraman Boot] Auto-start failed %s (slot %s): %v\n", camID, slot, err)
+				}
+			}(u.camID, u.slot)
 		}
 	}
 }
