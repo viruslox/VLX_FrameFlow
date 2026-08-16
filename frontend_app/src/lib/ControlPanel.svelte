@@ -30,8 +30,32 @@
   let rawStates = {};
   let pollingInterval;
 
-  let availableDevices = [];
-  let selectedDevice = "";
+  let videoIds = [];
+  let audioIds = [];
+  let selectedVideo = "";      // "" = None (V0)
+  let selectedAudio = "auto";  // "auto" = bare V<n> sysfs pairing; "" = None (A0)
+  let slotHi = "";
+  let slotLo = "";
+
+  // Build the VxAy hardware selector from the two pickers. Returns null for
+  // invalid combinations (nothing real, or Auto audio without a video source).
+  function buildCameraId(v, a) {
+    if (!v && (!a || a === "auto")) return null;
+    if (!v && a) return "V0" + a;      // audio-only + dark-grey placeholder
+    if (v && a === "auto") return v;   // video + auto-discovered audio
+    if (v && !a) return v + "A0";      // video + silent
+    return v + a;                      // explicit V<n>A<m>
+  }
+
+  // Each NN box accepts a single numeric digit; keep only the last digit typed.
+  function sanitizeDigit(e, which) {
+    const d = (e.target.value.match(/[0-9]/g) || []).join("").slice(-1);
+    if (which === "hi") slotHi = d; else slotLo = d;
+    e.target.value = d;
+  }
+
+  $: selectedCameraId = buildCameraId(selectedVideo, selectedAudio);
+  $: slotStr = `${slotHi}${slotLo}`;
 
   const loadMode = async () => {
     // Decide direct vs relay base from the frontend's own /config. In relay
@@ -82,18 +106,21 @@
         }
       }
 
-      const combos = [...vIds, ...aIds];
-      if (vIds.length === 0) combos.push("V0");
-      if (aIds.length === 0) combos.push("A0");
+      videoIds = vIds;
+      audioIds = aIds;
 
-      availableDevices = combos;
-      if (combos.length > 0 && !selectedDevice) {
-        selectedDevice = combos[0];
+      // Default video to the first camera (or None when there is no capture
+      // device); audio defaults to Auto. For an audio-only box (no video),
+      // fall back to the first real audio card so the combo is valid.
+      if (!selectedVideo && vIds.length > 0) selectedVideo = vIds[0];
+      if (vIds.length === 0) selectedVideo = "";
+      if (selectedVideo === "" && selectedAudio === "auto" && aIds.length > 0) {
+        selectedAudio = aIds[0];
       }
     } catch (err) {
       console.error("Failed to fetch devlist", err);
-      availableDevices = ["V0", "A0"];
-      if (!selectedDevice) selectedDevice = "V0";
+      videoIds = [];
+      audioIds = [];
     }
   };
 
@@ -132,9 +159,9 @@
     try {
       if (moduleName === "Cameraman") {
         if (actionName === "Start" && payload) {
-          logToConsole(`Starting stream ${payload.device}...`);
+          logToConsole(`Starting stream ${payload.device} (slot ${payload.slot || "auto"})...`);
         } else if (actionName === "Stop" && payload) {
-          logToConsole(`Stopping stream ${payload.device}...`);
+          logToConsole(`Stopping slot ${payload.slot}...`);
         }
       } else {
         logToConsole(`[${moduleName}] Initiating ${actionName}...`);
@@ -298,18 +325,46 @@
 
         <div class="btn-group">
           {#if mod.id === 'cameraman'}
-            <select bind:value={selectedDevice}>
-              {#each availableDevices as dev}
-                <option value={dev}>{dev}</option>
-              {/each}
-            </select>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:0.4rem;">
+              <label style="display:flex; flex-direction:column; font-size:0.75rem; gap:0.15rem;">
+                Video
+                <select bind:value={selectedVideo}>
+                  <option value="">None (V0)</option>
+                  {#each videoIds as v}
+                    <option value={v}>{v}</option>
+                  {/each}
+                </select>
+              </label>
+              <label style="display:flex; flex-direction:column; font-size:0.75rem; gap:0.15rem;">
+                Audio
+                <select bind:value={selectedAudio}>
+                  <option value="auto">Auto</option>
+                  <option value="">None (A0)</option>
+                  {#each audioIds as a}
+                    <option value={a}>{a}</option>
+                  {/each}
+                </select>
+              </label>
+              <label style="display:flex; flex-direction:column; font-size:0.75rem; gap:0.15rem;">
+                Path NN
+                <span style="display:flex; gap:0.2rem;">
+                  <input type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" placeholder="0"
+                    style="width:2ch; text-align:center;" value={slotHi} on:input={(e) => sanitizeDigit(e, 'hi')} />
+                  <input type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" placeholder="0"
+                    style="width:2ch; text-align:center;" value={slotLo} on:input={(e) => sanitizeDigit(e, 'lo')} />
+                </span>
+              </label>
+            </div>
           {/if}
 
-          {#if mod.id !== 'bonding'}
-            <button on:click={() => execCommand(mod.name, ep(mod.paths.start), 'Start', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Start</button>
-            <button on:click={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', mod.id === 'cameraman' ? { device: selectedDevice } : null)}>Stop</button>
-          {/if}
-          {#if mod.id !== 'bonding'}
+          {#if mod.id === 'cameraman'}
+            <button disabled={!selectedCameraId} title={selectedCameraId ? '' : 'Pick a video and/or audio source'}
+              on:click={() => execCommand(mod.name, ep(mod.paths.start), 'Start', { device: selectedCameraId, slot: slotStr })}>Start</button>
+            <button on:click={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', { slot: slotStr })}>Stop</button>
+            <button on:click={() => execCommand(mod.name, ep(mod.paths.status), 'Status', slotStr ? { slot: slotStr } : null)}>Status</button>
+          {:else if mod.id !== 'bonding'}
+            <button on:click={() => execCommand(mod.name, ep(mod.paths.start), 'Start', null)}>Start</button>
+            <button on:click={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', null)}>Stop</button>
             <button on:click={() => execCommand(mod.name, ep(mod.paths.status), 'Status', null)}>Status</button>
           {/if}
           {#if mod.paths.reset}

@@ -243,21 +243,52 @@ func FindMatchingAudioDevice(videoDevPath string) string {
 		return ""
 	}
 
+	// Tier 1: exact hardware-parent match (audio card and video device resolve
+	// to the same PCI/USB device node). Tier 2 (fallback): collect the other
+	// cards' parents here and, if tier 1 misses, accept a single unambiguous
+	// topological match — this pairs composite/hubbed capture devices whose
+	// audio function enumerates one node above or below the video interface.
+	type audioCard struct {
+		num    string
+		parent string
+	}
+	var cards []audioCard
+
 	for _, f := range files {
-		if strings.HasPrefix(f.Name(), "card") {
-			cardSysfs, err := filepath.EvalSymlinks(filepath.Join("/sys/class/sound", f.Name(), "device"))
-			if err != nil {
-				continue
+		if !strings.HasPrefix(f.Name(), "card") {
+			continue
+		}
+		cardSysfs, err := filepath.EvalSymlinks(filepath.Join("/sys/class/sound", f.Name(), "device"))
+		if err != nil {
+			continue
+		}
+
+		audioParent := getHardwareParentPath(cardSysfs)
+		// Match verified if both devices share the exact same hardware parent (PCI/USB)
+		if audioParent == videoParent {
+			return strings.TrimPrefix(f.Name(), "card")
+		}
+		cards = append(cards, audioCard{num: strings.TrimPrefix(f.Name(), "card"), parent: audioParent})
+	}
+
+	// Tier 2: accept a match only when exactly one card's parent is an ancestor
+	// or descendant of the video parent (composite device). More than one such
+	// candidate is ambiguous, so we decline and let the caller inject silence
+	// rather than risk pairing an unrelated card.
+	match := ""
+	for _, c := range cards {
+		if c.parent == "" || c.parent == "/" {
+			continue
+		}
+		related := strings.HasPrefix(videoParent, c.parent+"/") || strings.HasPrefix(c.parent, videoParent+"/")
+		if related {
+			if match != "" {
+				return "" // ambiguous; do not guess
 			}
-			
-			audioParent := getHardwareParentPath(cardSysfs)
-			// Match verified if both devices share the exact same hardware parent (PCI/USB)
-			if audioParent == videoParent {
-				return strings.TrimPrefix(f.Name(), "card")
-			}
+			match = c.num
 		}
 	}
-	return ""
+	return match
 }
 
 type FormatCapability struct {
