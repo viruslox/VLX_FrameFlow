@@ -592,43 +592,9 @@ func PrepareStreamURL(srtURL string) string {
 	return finalSRT
 }
 
-func AppendCameraID(srtURL, cameraID string) string {
-	u, err := url.Parse(srtURL)
-	if err != nil {
-		return fmt.Sprintf("%s_%s", srtURL, cameraID)
-	}
-
-	q := u.Query()
-	streamid := q.Get("streamid")
-
-	if streamid != "" {
-		parts := strings.Split(streamid, ":")
-		if len(parts) >= 2 {
-			parts[1] = fmt.Sprintf("%s_%s", parts[1], cameraID)
-		} else {
-			parts[0] = fmt.Sprintf("%s_%s", parts[0], cameraID)
-		}
-		q.Set("streamid", strings.Join(parts, ":"))
-		u.RawQuery = q.Encode()
-		res := u.String()
-		res = strings.ReplaceAll(res, "%3A", ":")
-		return res
-	}
-
-	if u.Path != "" {
-		u.Path = fmt.Sprintf("%s_%s", u.Path, cameraID)
-	} else {
-		u.Path = fmt.Sprintf("/_%s", cameraID)
-	}
-
-	res := u.String()
-	res = strings.ReplaceAll(res, "%3A", ":")
-	return res
-}
-
 // BuildStreamTarget sets the publish path of an SRT URL to an exact name
 // (e.g. "cameraman_01"), preserving any publish:/read: verb and user:pass in
-// the streamid. Unlike AppendCameraID it replaces rather than appends, so the
+// the streamid. It replaces the path rather than appending, so the
 // remote MediaMTX/VisionBridge path is the stable NN slot.
 func BuildStreamTarget(srtURL, pathName string) string {
 	u, err := url.Parse(srtURL)
@@ -896,7 +862,7 @@ func StopStream(slot string) error {
 		resp.Body.Close()
 	}()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= 400 && resp.StatusCode != 404 {
 		return fmt.Errorf("MediaMTX API returned status: %d", resp.StatusCode)
 	}
 
