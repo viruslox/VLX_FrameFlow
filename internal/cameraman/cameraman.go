@@ -576,20 +576,38 @@ func deviceInUse(hwToken, exceptSlot string) bool {
 
 func PrepareStreamURL(srtURL string) string {
 	finalSRT := srtURL
+	serverTunIP := bondingServerTunIP(LoadSettings())
 
 	// Check if bonding server is reachable
 	bondingServerReach := false
-	_, err := sysutils.RunCommand(2*time.Second, "ping", "-c", "1", "-W", "1", "10.1.10.1")
+	_, err := sysutils.RunCommand(2*time.Second, "ping", "-c", "1", "-W", "1", serverTunIP)
 	if err == nil {
 		bondingServerReach = true
 	}
 
 	if bondingServerReach {
 		re := regexp.MustCompile(`srt://[^/:]+`)
-		finalSRT = re.ReplaceAllString(srtURL, "srt://10.1.10.1")
+		finalSRT = re.ReplaceAllString(srtURL, "srt://"+serverTunIP)
 	}
 
 	return finalSRT
+}
+
+// bondingServerTunIP resolves the server's in-tunnel address for this client
+// from settings. An explicit MLVPN_SERVER_TUN_IP wins; otherwise it derives
+// from MLVPN_SLOT as 10.1.(10+slot).1. An unset/blank slot yields the
+// historical 10.1.10.1.
+func bondingServerTunIP(settings map[string]string) string {
+	if ip := strings.TrimSpace(settings["MLVPN_SERVER_TUN_IP"]); ip != "" {
+		return ip
+	}
+	slot := 0
+	if s := strings.TrimSpace(settings["MLVPN_SLOT"]); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			slot = n
+		}
+	}
+	return fmt.Sprintf("10.1.%d.1", 10+slot)
 }
 
 // BuildStreamTarget sets the publish path of an SRT URL to an exact name

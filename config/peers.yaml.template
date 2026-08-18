@@ -1,0 +1,39 @@
+# VLX FrameFlow — MLVPN peer registry (SERVER role only)
+#
+# Each entry is one bonded client. The server runs one mlvpn instance per peer,
+# provisioned from this file by `SetupMlvpnBonding` and instantiated as the
+# templated unit  frameflow-mlvpn@<slot>.service  (config /etc/mlvpn/mlvpn<slot>.conf).
+#
+# The integer `slot` deterministically derives every network resource, so a
+# minimal peer needs only slot + name + key:
+#
+#     interface   mlvpn<slot>
+#     udp port    5080 + slot
+#     server IP   10.1.<10+slot>.1/24    (this server's address on the tunnel)
+#     client IP   10.1.<10+slot>.2/24    (the client's address; its gateway is the server IP)
+#
+# Slot 0 reproduces the historical single-client values (mlvpn0, udp/5080,
+# 10.1.10.1 <-> 10.1.10.2). Give each additional client the next free slot.
+#
+# `key` is that peer's MLVPN password (must match the client's MLVPN_KEY).
+# Leave it empty ("") to have a random key generated and written back here on
+# the next setup run. `client_tun_ip`, `server_tun_ip` and `port` are optional
+# overrides — omit them to use the slot-derived defaults above.
+#
+# If this file is absent, the server falls back to the legacy single-tunnel
+# behaviour driven by MLVPN_KEY in frameflow.settings.
+
+peers:
+  - slot: 0
+    name: "backpack-01"
+    key: ""
+  # - slot: 1
+  #   name: "backpack-02"
+  #   key: ""
+  # - slot: 2
+  #   name: "fixed-cam-lobby"
+  #   key: ""
+  #   # explicit overrides (optional):
+  #   # client_tun_ip: "10.1.12.2"
+  #   # server_tun_ip: "10.1.12.1"
+  #   # port: 5082
