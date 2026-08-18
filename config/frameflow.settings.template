@@ -20,6 +20,15 @@ gps_target_url=""
 # Specifies role-aware privilege scoping. Do not manually force unless required.
 FRAMEFLOW_ROLE=""
 MLVPN_SERVER_IP=""
+# MLVPN tunnel identity (client). Must match this client's peer slot on the
+# server (see the server's etc/peers.yaml). Slot k derives:
+#   client TUN 10.1.(10+k).2, gateway/server TUN 10.1.(10+k).1, remote udp 5080+k.
+# Slot 0 reproduces the historical single-client values. The *_TUN_IP /
+# *_REMOTE_PORT overrides are optional, only for non-standard subnets/ports.
+MLVPN_SLOT="0"
+MLVPN_CLIENT_TUN_IP=""
+MLVPN_SERVER_TUN_IP=""
+MLVPN_REMOTE_PORT=""
 # Supports native Dual-Stack TCP bonding (comma-separated IPv4, IPv6)
 SHADOWSOCKS_SERVER_IPS=""
 MPTCP_PROXY_PASS=""

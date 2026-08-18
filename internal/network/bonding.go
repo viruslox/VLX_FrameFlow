@@ -6,6 +6,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -308,7 +309,21 @@ WantedBy=multi-user.target
 	return nil
 }
 
+// SetupMlvpnBonding dispatches to the multi-peer server path when a peer
+// registry (etc/peers.yaml) is present on a SERVER, and otherwise runs the
+// historical single-tunnel path (unchanged) for the CLIENT and for servers
+// without a registry.
 func SetupMlvpnBonding() error {
+	if os.Getenv("FRAMEFLOW_ROLE") == "SERVER" {
+		peersPath := ServerPeersPath()
+		if _, err := os.Stat(peersPath); err == nil {
+			return setupMlvpnBondingServerMulti(peersPath)
+		}
+	}
+	return setupMlvpnBondingLegacy()
+}
+
+func setupMlvpnBondingLegacy() error {
 	sysutils.Info("Setting up MLVPN Bonding (UDP)...")
 
 	sysutils.InstallMlvpn()
@@ -338,10 +353,112 @@ func SetupMlvpnBonding() error {
 		vpsIP = "127.0.0.1" // fallback
 	}
 
-	GenerateMlvpnConfig(configFile, updownScript, mlvpnKey, role, vpsIP)
+	if role == "CLIENT" {
+		id := LoadClientTunnelIdentity(settingsFile)
+		GenerateMlvpnClientConfig(configFile, updownScript, mlvpnKey, vpsIP, id)
+	} else {
+		GenerateMlvpnConfig(configFile, updownScript, mlvpnKey, role, vpsIP)
+	}
 	os.Chmod(configFile, 0600)
 
-	updownContent := `#!/bin/sh
+	os.WriteFile(updownScript, []byte(mlvpnUpdownScript), 0700)
+
+	mlvpnBin, _ := sysutils.RunCommand(10*time.Second, "command", "-v", "mlvpn")
+	mlvpnBin = strings.TrimSpace(mlvpnBin)
+	if mlvpnBin == "" {
+		mlvpnBin = "/usr/local/sbin/mlvpn"
+	}
+
+	targetUser, _ := sysutils.GetInstalledUser()
+	if targetUser == "" || targetUser == "root" {
+		targetUser = "nobody"
+	}
+
+	sysutils.RunCommand(10*time.Second, "chown", fmt.Sprintf("%s:root", targetUser), configDir, configFile, updownScript)
+
+	var serviceFile string
+	if role == "SERVER" {
+		serviceFile = "/etc/systemd/system/frameflow-mlvpn.service"
+	} else {
+		serviceFile = "/etc/systemd/user/frameflow-mlvpn.service"
+	}
+	GenerateMlvpnService(serviceFile, mlvpnBin, targetUser, configFile, role)
+
+	if role == "SERVER" {
+		sysutils.RunCommand(10*time.Second, "systemctl", "daemon-reload")
+		sysutils.RunCommand(10*time.Second, "systemctl", "enable", "frameflow-mlvpn.service")
+	} else {
+		sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user daemon-reload")
+		sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user enable frameflow-mlvpn.service")
+	}
+
+	if role == "CLIENT" {
+		if u, err := user.Lookup(targetUser); err == nil && u.Gid != "" {
+			confPath := "/etc/sysctl.d/99-ping-frameflow.conf"
+			os.WriteFile(confPath, []byte(fmt.Sprintf("net.ipv4.ping_group_range = %s %s\n", u.Gid, u.Gid)), 0644)
+			sysutils.RunCommand(10*time.Second, "sysctl", "-p", confPath)
+		}
+
+		// Ultimate fallback for non-root ping capabilities
+		sysutils.RunCommand(10*time.Second, "setcap", "cap_net_raw+p", "/bin/ping")
+		sysutils.RunCommand(10*time.Second, "setcap", "cap_net_raw+p", "/usr/bin/ping")
+
+		sysutils.Success("MLVPN Bonding (Client) configured.")
+	} else {
+		sysutils.Success("MLVPN Bonding (Server) configured.")
+	}
+
+	return nil
+}
+
+// GetBondingStatus returns a formatted string containing the status of the
+// bonding components. On a SERVER with a peer registry it reports per-peer
+// tunnel status; otherwise it uses the historical single-tunnel report.
+func GetBondingStatus() string {
+	if os.Getenv("FRAMEFLOW_ROLE") == "SERVER" {
+		peersPath := ServerPeersPath()
+		if _, err := os.Stat(peersPath); err == nil {
+			return getBondingStatusServerMulti(peersPath)
+		}
+	}
+	return getBondingStatusLegacy()
+}
+
+func getBondingStatusLegacy() string {
+	role := os.Getenv("FRAMEFLOW_ROLE")
+	var err error
+
+	// Check MPTCP Proxy (Shadowsocks)
+	if role == "SERVER" {
+		_, err = sysutils.RunCommand(10*time.Second, "systemctl", "is-active", "--quiet", "frameflow-mptcp-proxy.service")
+	} else {
+		_, err = sysutils.RunCommand(10*time.Second, "systemctl", "--user", "is-active", "--quiet", "frameflow-mptcp-proxy.service")
+	}
+	mptcpStatus := "\033[32mActive\033[0m"
+	if err != nil {
+		mptcpStatus = "\033[31mInactive\033[0m"
+	}
+	res := fmt.Sprintf("MPTCP Proxy (Shadowsocks): %s\n", mptcpStatus)
+
+	// Check MLVPN Tunnel (mlvpn0)
+	if role == "SERVER" {
+		_, err = sysutils.RunCommand(10*time.Second, "systemctl", "is-active", "--quiet", "frameflow-mlvpn.service")
+	} else {
+		_, err = sysutils.RunCommand(10*time.Second, "systemctl", "--user", "is-active", "--quiet", "frameflow-mlvpn.service")
+	}
+	mlvpnStatus := "\033[32mConnected\033[0m"
+	if err != nil {
+		mlvpnStatus = "\033[31mDisconnected\033[0m"
+	}
+	res += fmt.Sprintf("MLVPN Tunnel (mlvpn0): %s\n", mlvpnStatus)
+
+	return res
+}
+
+// mlvpnUpdownScript is the interface up/down helper invoked by mlvpn via its
+// statuscommand. It is generic across peers (it acts on $DEVICE supplied by
+// mlvpn at runtime) and is shared by the legacy and multi-peer paths.
+const mlvpnUpdownScript = `#!/bin/sh
 DEVICE="$1"
 STATUS="$2"
 LOG=/tmp/mlvpn_${DEVICE}.log
@@ -408,7 +525,85 @@ esac
 
 exit 0
 `
-	os.WriteFile(updownScript, []byte(updownContent), 0700)
+
+// GenerateMlvpnServerPeerConfig writes the server-side mlvpn config for a
+// single peer. The interface name, address pair and bind port come from the
+// peer's slot-derived (or explicitly overridden) fields.
+func GenerateMlvpnServerPeerConfig(configFile, updownScript, key string, p MlvpnPeer) error {
+	content := fmt.Sprintf(`[general]
+statuscommand = "%s"
+mode = "server"
+ip4 = "%s/24"
+ip4_gateway = "%s"
+mtu = 1444
+tuntap = "tun"
+interface_name = "%s"
+timeout = 30
+password = "%s"
+
+[mlvpn_link]
+bindhost = "0.0.0.0"
+bindport = %d
+`, updownScript, p.ServerTunIP, p.ClientTunIP, PeerInterface(p.Slot), key, p.Port)
+
+	if err := os.MkdirAll(filepath.Dir(configFile), 0755); err != nil {
+		return fmt.Errorf("failed to create config dir: %w", err)
+	}
+	if err := os.WriteFile(configFile, []byte(content), 0600); err != nil {
+		return fmt.Errorf("failed to write mlvpn peer config: %w", err)
+	}
+	return nil
+}
+
+// GenerateMlvpnServerServiceTemplate writes the templated systemd unit
+// (frameflow-mlvpn@.service) instantiated once per peer slot. The %i specifier
+// resolves to the slot, selecting /etc/mlvpn/mlvpn<slot>.conf.
+func GenerateMlvpnServerServiceTemplate(serviceFile, mlvpnBin, targetUser string) error {
+	content := fmt.Sprintf(`[Unit]
+Description=VLX FrameFlow MLVPN Bonding Server (peer %%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/sudo %s -u %s -c /etc/mlvpn/mlvpn%%i.conf
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+`, mlvpnBin, targetUser)
+
+	if err := os.MkdirAll(filepath.Dir(serviceFile), 0755); err != nil {
+		return fmt.Errorf("failed to create service dir: %w", err)
+	}
+	if err := os.WriteFile(serviceFile, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write mlvpn service template: %w", err)
+	}
+	return nil
+}
+
+// setupMlvpnBondingServerMulti provisions one mlvpn instance per peer from the
+// registry: a templated unit, per-slot config files, per-peer key generation,
+// and per-peer firewall openings.
+func setupMlvpnBondingServerMulti(peersPath string) error {
+	sysutils.Info("Setting up MLVPN Bonding (UDP, multi-peer server)...")
+	sysutils.InstallMlvpn()
+
+	peers, err := LoadPeers(peersPath)
+	if err != nil {
+		return fmt.Errorf("failed to load peer registry: %w", err)
+	}
+	if len(peers) == 0 {
+		sysutils.Warning("Peer registry %s contains no peers; no MLVPN tunnels will be provisioned.", peersPath)
+	}
+
+	configDir := "/etc/mlvpn"
+	updownScript := filepath.Join(configDir, "mlvpn_updown.sh")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create %s: %w", configDir, err)
+	}
+	os.WriteFile(updownScript, []byte(mlvpnUpdownScript), 0700)
 
 	mlvpnBin, _ := sysutils.RunCommand(10*time.Second, "command", "-v", "mlvpn")
 	mlvpnBin = strings.TrimSpace(mlvpnBin)
@@ -421,71 +616,128 @@ exit 0
 		targetUser = "nobody"
 	}
 
-	sysutils.RunCommand(10*time.Second, "chown", fmt.Sprintf("%s:root", targetUser), configDir, configFile, updownScript)
-
-	var serviceFile string
-	if role == "SERVER" {
-		serviceFile = "/etc/systemd/system/frameflow-mlvpn.service"
-	} else {
-		serviceFile = "/etc/systemd/user/frameflow-mlvpn.service"
-	}
-	GenerateMlvpnService(serviceFile, mlvpnBin, targetUser, configFile, role)
-
-	if role == "SERVER" {
-		sysutils.RunCommand(10*time.Second, "systemctl", "daemon-reload")
-		sysutils.RunCommand(10*time.Second, "systemctl", "enable", "frameflow-mlvpn.service")
-	} else {
-		sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user daemon-reload")
-		sysutils.RunCommand(10*time.Second, "su", "-", targetUser, "-c", "XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus systemctl --user enable frameflow-mlvpn.service")
+	serviceFile := "/etc/systemd/system/frameflow-mlvpn@.service"
+	if err := GenerateMlvpnServerServiceTemplate(serviceFile, mlvpnBin, targetUser); err != nil {
+		return fmt.Errorf("failed to write templated mlvpn unit: %w", err)
 	}
 
-	if role == "CLIENT" {
-		if u, err := user.Lookup(targetUser); err == nil && u.Gid != "" {
-			confPath := "/etc/sysctl.d/99-ping-frameflow.conf"
-			os.WriteFile(confPath, []byte(fmt.Sprintf("net.ipv4.ping_group_range = %s %s\n", u.Gid, u.Gid)), 0644)
-			sysutils.RunCommand(10*time.Second, "sysctl", "-p", confPath)
+	// Retire the legacy single-instance unit to avoid an mlvpn0 / udp-5080
+	// collision with peer slot 0.
+	sysutils.RunCommand(10*time.Second, "systemctl", "disable", "--now", "frameflow-mlvpn.service")
+
+	chownTargets := []string{configDir, updownScript}
+	for i := range peers {
+		p := &peers[i]
+		key, err := EnsurePeerKey(peersPath, p.Slot, p.Key)
+		if err != nil {
+			return fmt.Errorf("peer slot %d: %w", p.Slot, err)
 		}
+		p.Key = key
 
-		// Ultimate fallback for non-root ping capabilities
-		sysutils.RunCommand(10*time.Second, "setcap", "cap_net_raw+p", "/bin/ping")
-		sysutils.RunCommand(10*time.Second, "setcap", "cap_net_raw+p", "/usr/bin/ping")
-
-		sysutils.Success("MLVPN Bonding (Client) configured.")
-	} else {
-		sysutils.Success("MLVPN Bonding (Server) configured.")
+		peerConf := filepath.Join(configDir, fmt.Sprintf("mlvpn%d.conf", p.Slot))
+		if err := GenerateMlvpnServerPeerConfig(peerConf, updownScript, key, *p); err != nil {
+			return fmt.Errorf("peer slot %d: failed to write config: %w", p.Slot, err)
+		}
+		os.Chmod(peerConf, 0600)
+		chownTargets = append(chownTargets, peerConf)
 	}
 
+	chownArgs := append([]string{fmt.Sprintf("%s:root", targetUser)}, chownTargets...)
+	sysutils.RunCommand(10*time.Second, "chown", chownArgs...)
+
+	sysutils.RunCommand(10*time.Second, "systemctl", "daemon-reload")
+	for _, p := range peers {
+		sysutils.RunCommand(10*time.Second, "systemctl", "enable", PeerServiceInstance(p.Slot))
+		sysutils.RunCommand(10*time.Second, "ufw", "allow", fmt.Sprintf("%d/udp", p.Port))
+		sysutils.Success("MLVPN peer slot %d (%s): %s  srv %s  cli %s  udp/%d",
+			p.Slot, p.Name, PeerInterface(p.Slot), p.ServerTunIP, p.ClientTunIP, p.Port)
+	}
+
+	sysutils.Success("MLVPN Bonding (multi-peer server) configured for %d peer(s).", len(peers))
 	return nil
 }
 
-// GetBondingStatus returns a formatted string containing the status of the bonding components.
-func GetBondingStatus() string {
-	role := os.Getenv("FRAMEFLOW_ROLE")
-	var err error
-
-	// Check MPTCP Proxy (Shadowsocks)
-	if role == "SERVER" {
-		_, err = sysutils.RunCommand(10*time.Second, "systemctl", "is-active", "--quiet", "frameflow-mptcp-proxy.service")
-	} else {
-		_, err = sysutils.RunCommand(10*time.Second, "systemctl", "--user", "is-active", "--quiet", "frameflow-mptcp-proxy.service")
-	}
+// getBondingStatusServerMulti reports MPTCP proxy status plus per-peer tunnel
+// status from the registry.
+func getBondingStatusServerMulti(peersPath string) string {
+	_, err := sysutils.RunCommand(10*time.Second, "systemctl", "is-active", "--quiet", "frameflow-mptcp-proxy.service")
 	mptcpStatus := "\033[32mActive\033[0m"
 	if err != nil {
 		mptcpStatus = "\033[31mInactive\033[0m"
 	}
 	res := fmt.Sprintf("MPTCP Proxy (Shadowsocks): %s\n", mptcpStatus)
 
-	// Check MLVPN Tunnel (mlvpn0)
-	if role == "SERVER" {
-		_, err = sysutils.RunCommand(10*time.Second, "systemctl", "is-active", "--quiet", "frameflow-mlvpn.service")
-	} else {
-		_, err = sysutils.RunCommand(10*time.Second, "systemctl", "--user", "is-active", "--quiet", "frameflow-mlvpn.service")
-	}
-	mlvpnStatus := "\033[32mConnected\033[0m"
+	peers, err := LoadPeers(peersPath)
 	if err != nil {
-		mlvpnStatus = "\033[31mDisconnected\033[0m"
+		res += fmt.Sprintf("MLVPN Peers: \033[31merror loading registry: %v\033[0m\n", err)
+		return res
 	}
-	res += fmt.Sprintf("MLVPN Tunnel (mlvpn0): %s\n", mlvpnStatus)
-
+	if len(peers) == 0 {
+		res += "MLVPN Peers: none configured\n"
+		return res
+	}
+	for _, p := range peers {
+		_, e := sysutils.RunCommand(10*time.Second, "systemctl", "is-active", "--quiet", PeerServiceInstance(p.Slot))
+		st := "\033[32mConnected\033[0m"
+		if e != nil {
+			st = "\033[31mDisconnected\033[0m"
+		}
+		res += fmt.Sprintf("MLVPN Peer slot %d (%s) [%s]: %s\n", p.Slot, p.Name, PeerInterface(p.Slot), st)
+	}
 	return res
+}
+
+// GenerateMlvpnClientConfig writes the client-side mlvpn config using a
+// configurable tunnel identity. The underlay remote host (the server's public
+// address, from MLVPN_SERVER_IP) is distinct from the in-tunnel gateway. The
+// local interface stays mlvpn0 (a client has a single tunnel), so the service
+// unit's routing ExecStartPost is unaffected.
+func GenerateMlvpnClientConfig(configFile, updownScript, mlvpnKey, remoteHost string, id ClientTunnelIdentity) error {
+	content := fmt.Sprintf(`[general]
+statuscommand = "%s"
+mode = "client"
+ip4 = "%s/24"
+ip4_gateway = "%s"
+mtu = 1444
+tuntap = "tun"
+interface_name = "mlvpn0"
+timeout = 30
+password = "%s"
+
+[mlvpn_link]
+bindhost = "0.0.0.0"
+remotehost = "%s"
+remoteport = %d
+`, updownScript, id.ClientTunIP, id.ServerTunIP, mlvpnKey, remoteHost, id.RemotePort)
+
+	if err := os.MkdirAll(filepath.Dir(configFile), 0755); err != nil {
+		return fmt.Errorf("failed to create config dir: %w", err)
+	}
+	if err := os.WriteFile(configFile, []byte(content), 0600); err != nil {
+		return fmt.Errorf("failed to write mlvpn client config: %w", err)
+	}
+	return nil
+}
+
+// LoadClientTunnelIdentity reads the client's MLVPN tunnel identity from the
+// settings file: MLVPN_SLOT plus optional explicit overrides
+// (MLVPN_CLIENT_TUN_IP, MLVPN_SERVER_TUN_IP, MLVPN_REMOTE_PORT). Absent or
+// empty values derive from the slot; an absent slot defaults to 0, reproducing
+// the historical single-client tunnel.
+func LoadClientTunnelIdentity(settingsFile string) ClientTunnelIdentity {
+	slot := 0
+	if s := strings.TrimSpace(GetProfileVar(settingsFile, "MLVPN_SLOT")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			slot = n
+		}
+	}
+	clientIP := strings.TrimSpace(GetProfileVar(settingsFile, "MLVPN_CLIENT_TUN_IP"))
+	serverIP := strings.TrimSpace(GetProfileVar(settingsFile, "MLVPN_SERVER_TUN_IP"))
+	port := 0
+	if s := strings.TrimSpace(GetProfileVar(settingsFile, "MLVPN_REMOTE_PORT")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			port = n
+		}
+	}
+	return DeriveClientTunnelIdentity(slot, clientIP, serverIP, port)
 }
