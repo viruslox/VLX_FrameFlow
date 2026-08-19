@@ -74,6 +74,9 @@ var apiStartCmd = &cobra.Command{
 					c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 					return
 				}
+				// Strip the peer selector: the SBC hub serves /ws, not /ws/<id>.
+				// The ticket query string is preserved.
+				c.Request.URL.Path = "/ws"
 				api.NewClientWSProxy(host, clientPort).ServeHTTP(c.Writer, c.Request)
 			})
 		}
