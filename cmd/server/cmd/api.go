@@ -1,13 +1,11 @@
 package cmd
 
 import (
-	"crypto/tls"
 	"fmt"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -62,25 +60,27 @@ var apiStartCmd = &cobra.Command{
 			if clientPort == "" {
 				clientPort = "9090"
 			}
-			wsTarget := &url.URL{
-				Scheme: "https",
-				Host:   fmt.Sprintf("%s:%s", clientHost, clientPort),
-			}
-			wsProxy := httputil.NewSingleHostReverseProxy(wsTarget)
-			wsProxy.Transport = &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}
-			// Strip the browser Origin so the SBC's CheckOrigin treats this as a
-			// non-cross-origin (tunnelled) request and accepts the upgrade,
-			// mirroring how the HTTP relay avoids imposing CORS on relayed calls.
-			origDirector := wsProxy.Director
-			wsProxy.Director = func(req *http.Request) {
-				origDirector(req)
-				req.Header.Del("Origin")
-				req.Host = wsTarget.Host
-			}
+
+			// Legacy single-client WS (slot 0 / RelayClientHost).
+			legacyWS := api.NewClientWSProxy(clientHost, clientPort)
 			r.GET("/ws", func(c *gin.Context) {
-				wsProxy.ServeHTTP(c.Writer, c.Request)
+				legacyWS.ServeHTTP(c.Writer, c.Request)
+			})
+
+			// Multi-client WS: resolve the peer slot to its client host per
+			// connection, then tunnel the upgrade to that SBC's hub.
+			r.GET("/ws/:slot", func(c *gin.Context) {
+				slot, err := strconv.Atoi(c.Param("slot"))
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "invalid peer slot"})
+					return
+				}
+				host, err := api.ResolvePeerClientHost(slot, clientHost)
+				if err != nil {
+					c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+					return
+				}
+				api.NewClientWSProxy(host, clientPort).ServeHTTP(c.Writer, c.Request)
 			})
 		}
 
