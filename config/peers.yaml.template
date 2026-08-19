@@ -20,6 +20,11 @@
 # the next setup run. `client_tun_ip`, `server_tun_ip` and `port` are optional
 # overrides — omit them to use the slot-derived defaults above.
 #
+# `name` is MANDATORY and is the client's addressable handle: it is the URL
+# segment browsers call (https://<server>/<name>/) and the id the relay
+# resolves. It must be unique and DNS-label safe -- lowercase letters/digits
+# with internal hyphens (e.g. the SBC hostname).
+#
 # If this file is absent, the server falls back to the legacy single-tunnel
 # behaviour driven by MLVPN_KEY in frameflow.settings.
 

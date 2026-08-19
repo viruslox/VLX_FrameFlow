@@ -6,10 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// namePattern constrains a peer name to a DNS-label-safe, lowercase handle so it
+// is coherent as both a URL path segment and a hostname: lowercase alphanumerics
+// and internal hyphens, no leading/trailing hyphen.
+var namePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 // MlvpnPeer describes a single bonded client on the SERVER side of the MLVPN
 // tunnel plane. Each peer maps to its own mlvpn instance: a dedicated tun
@@ -138,8 +145,23 @@ func validatePeers(peers []MlvpnPeer) error {
 	seenPort := map[int]struct{}{}
 	seenSrv := map[string]struct{}{}
 	seenCli := map[string]struct{}{}
+	seenName := map[string]struct{}{}
 
 	for _, p := range peers {
+		// Name is the mandatory, addressable handle (used as the URL segment
+		// browsers call and the id the relay resolves). It must be present,
+		// DNS/URL-safe, and unique.
+		if p.Name == "" {
+			return fmt.Errorf("peer slot %d: name is required", p.Slot)
+		}
+		if !namePattern.MatchString(p.Name) {
+			return fmt.Errorf("peer %q (slot %d): name must be lowercase alphanumeric with internal hyphens (DNS-label safe)", p.Name, p.Slot)
+		}
+		if _, dup := seenName[p.Name]; dup {
+			return fmt.Errorf("duplicate peer name %q", p.Name)
+		}
+		seenName[p.Name] = struct{}{}
+
 		if p.Slot < 0 || p.Slot > maxSlot {
 			return fmt.Errorf("peer %q: slot %d out of range 0..%d", p.Name, p.Slot, maxSlot)
 		}
@@ -197,6 +219,17 @@ func LoadPeers(path string) ([]MlvpnPeer, error) {
 		return nil, err
 	}
 	return pf.Peers, nil
+}
+
+// FindPeerByName returns the peer with the given name (case-insensitive), and
+// whether it was found.
+func FindPeerByName(peers []MlvpnPeer, name string) (MlvpnPeer, bool) {
+	for _, p := range peers {
+		if strings.EqualFold(p.Name, name) {
+			return p, true
+		}
+	}
+	return MlvpnPeer{}, false
 }
 
 // generateKey returns a fresh random hex key for a peer that has none.

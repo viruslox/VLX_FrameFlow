@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -67,15 +66,10 @@ var apiStartCmd = &cobra.Command{
 				legacyWS.ServeHTTP(c.Writer, c.Request)
 			})
 
-			// Multi-client WS: resolve the peer slot to its client host per
-			// connection, then tunnel the upgrade to that SBC's hub.
-			r.GET("/ws/:slot", func(c *gin.Context) {
-				slot, err := strconv.Atoi(c.Param("slot"))
-				if err != nil {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "invalid peer slot"})
-					return
-				}
-				host, err := api.ResolvePeerClientHost(slot, clientHost)
+			// Multi-client WS: resolve the peer (by name or slot) to its client
+			// host per connection, then tunnel the upgrade to that SBC's hub.
+			r.GET("/ws/:id", func(c *gin.Context) {
+				host, err := api.ResolvePeerClientHostByID(c.Param("id"), clientHost)
 				if err != nil {
 					c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 					return

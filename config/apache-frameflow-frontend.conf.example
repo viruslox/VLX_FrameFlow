@@ -1,0 +1,42 @@
+# VLX FrameFlow - example Apache vhost for the multi-client frontend.
+#
+# Role of Apache here: terminate browser HTTPS/TLS and reverse-proxy every
+# request straight to the FrameFlow frontend binary. Apache does NO client
+# routing -- the frontend owns all of it (name resolution, the trailing-slash
+# redirect, SPA serving, and relaying /<name>/api and /<name>/ws to the Server).
+#
+# Users open:   https://<server-name>/<client-name>/
+# where <client-name> is the mandatory, DNS-safe name from etc/peers.yaml.
+#
+# Required modules:
+#   a2enmod ssl proxy proxy_http proxy_wstunnel rewrite headers
+#
+# Assumes the frontend binary listens on 127.0.0.1:8080 (its BindPort).
+
+<VirtualHost *:443>
+    ServerName server.example.com
+
+    SSLEngine on
+    SSLCertificateFile    /etc/ssl/certs/frameflow.crt
+    SSLCertificateKeyFile /etc/ssl/private/frameflow.key
+
+    ProxyPreserveHost On
+    RequestHeader set X-Forwarded-Proto "https"
+
+    # WebSocket upgrade: any /<client-name>/ws request. Matched first so the
+    # Upgrade is tunnelled rather than treated as plain HTTP.
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} =websocket [NC]
+    RewriteRule ^/(.*)$ ws://127.0.0.1:8080/$1 [P,L]
+
+    # Everything else (SPA, /<name>/api/..., /<name>/config, redirects).
+    ProxyPass        / http://127.0.0.1:8080/
+    ProxyPassReverse / http://127.0.0.1:8080/
+</VirtualHost>
+
+# Plain HTTP -> HTTPS redirect (optional).
+<VirtualHost *:80>
+    ServerName server.example.com
+    RewriteEngine On
+    RewriteRule ^/(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+</VirtualHost>

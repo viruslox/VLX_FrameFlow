@@ -50,19 +50,33 @@ func TestValidatePeers_DuplicatesAndBounds(t *testing.T) {
 		wantErr bool
 	}{
 		{"empty ok", mk(), false},
-		{"two distinct ok", mk(MlvpnPeer{Slot: 0}, MlvpnPeer{Slot: 1}), false},
-		{"dup slot", mk(MlvpnPeer{Slot: 0}, MlvpnPeer{Slot: 0}), true},
-		{"slot too high", mk(MlvpnPeer{Slot: 100}), true},
-		{"negative slot", mk(MlvpnPeer{Slot: -1}), true},
-		{"reserved port override", mk(MlvpnPeer{Slot: 7, Port: 8890}), true},
-		{"dup port override", mk(MlvpnPeer{Slot: 0}, MlvpnPeer{Slot: 1, Port: 5080}), true},
-		{"identical srv/cli", mk(MlvpnPeer{Slot: 2, ServerTunIP: "10.0.0.1", ClientTunIP: "10.0.0.1"}), true},
+		{"two distinct ok", mk(MlvpnPeer{Slot: 0, Name: "a"}, MlvpnPeer{Slot: 1, Name: "b"}), false},
+		{"missing name", mk(MlvpnPeer{Slot: 0}), true},
+		{"bad name charset", mk(MlvpnPeer{Slot: 0, Name: "Bad_Name"}), true},
+		{"bad name leading hyphen", mk(MlvpnPeer{Slot: 0, Name: "-lead"}), true},
+		{"dup name", mk(MlvpnPeer{Slot: 0, Name: "same"}, MlvpnPeer{Slot: 1, Name: "same"}), true},
+		{"dup slot", mk(MlvpnPeer{Slot: 0, Name: "a"}, MlvpnPeer{Slot: 0, Name: "b"}), true},
+		{"slot too high", mk(MlvpnPeer{Slot: 100, Name: "a"}), true},
+		{"negative slot", mk(MlvpnPeer{Slot: -1, Name: "a"}), true},
+		{"reserved port override", mk(MlvpnPeer{Slot: 7, Name: "a", Port: 8890}), true},
+		{"dup port override", mk(MlvpnPeer{Slot: 0, Name: "a"}, MlvpnPeer{Slot: 1, Name: "b", Port: 5080}), true},
+		{"identical srv/cli", mk(MlvpnPeer{Slot: 2, Name: "a", ServerTunIP: "10.0.0.1", ClientTunIP: "10.0.0.1"}), true},
 	}
 	for _, c := range cases {
 		err := validatePeers(c.peers)
 		if (err != nil) != c.wantErr {
 			t.Errorf("%s: got err=%v wantErr=%v", c.name, err, c.wantErr)
 		}
+	}
+}
+
+func TestFindPeerByName(t *testing.T) {
+	peers := []MlvpnPeer{{Slot: 0, Name: "lobby"}, {Slot: 1, Name: "backpack-02"}}
+	if p, ok := FindPeerByName(peers, "LOBBY"); !ok || p.Slot != 0 {
+		t.Fatalf("case-insensitive lookup failed: %+v ok=%v", p, ok)
+	}
+	if _, ok := FindPeerByName(peers, "nope"); ok {
+		t.Fatal("unexpected match for absent name")
 	}
 }
 
@@ -97,7 +111,7 @@ peers:
 func TestLoadPeers_RejectsDuplicateSlot(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "peers.yaml")
-	os.WriteFile(path, []byte("peers:\n  - slot: 1\n  - slot: 1\n"), 0600)
+	os.WriteFile(path, []byte("peers:\n  - slot: 1\n    name: alpha\n  - slot: 1\n    name: beta\n"), 0600)
 	if _, err := LoadPeers(path); err == nil {
 		t.Fatal("expected duplicate-slot error")
 	}
