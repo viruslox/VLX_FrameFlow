@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -45,9 +44,10 @@ func (a *API) RegisterRoutes(r *gin.Engine, isServer bool) {
 		// SERVER: relay only. No local handlers, no local WebSocket ticket.
 		// Companion apps and the frontend reach the SBC via /api/v1/relay/*.
 		api.Any("/v1/relay/*path", a.handleRelay)
-		// Multi-client: address a specific peer by slot. Sibling of the legacy
-		// catch-all above (a distinct static segment, so no gin route conflict).
-		api.Any("/v1/peer/:slot/*path", a.handleRelayPeer)
+		// Multi-client: address a specific peer by name or slot. Sibling of the
+		// legacy catch-all above (a distinct static segment, so no gin route
+		// conflict).
+		api.Any("/v1/peer/:id/*path", a.handleRelayPeer)
 		return
 	}
 
@@ -140,18 +140,12 @@ func (a *API) handleRelay(c *gin.Context) {
 	a.relayTo(c, clientHost, clientPort, c.Param("path"))
 }
 
-// handleRelayPeer relays to a specific client selected by peer slot, resolving
-// the slot to its in-tunnel client host via the peer registry. The client API
-// port is shared across peers (RelayClientPort).
+// handleRelayPeer relays to a specific client selected by name or slot,
+// resolving it to its in-tunnel client host via the peer registry. The client
+// API port is shared across peers (RelayClientPort).
 func (a *API) handleRelayPeer(c *gin.Context) {
-	slot, err := strconv.Atoi(c.Param("slot"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid peer slot"})
-		return
-	}
-
 	backendCfg := config.LoadBackendConfig("")
-	clientHost, err := ResolvePeerClientHost(slot, backendCfg.RelayClientHost)
+	clientHost, err := ResolvePeerClientHostByID(c.Param("id"), backendCfg.RelayClientHost)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return

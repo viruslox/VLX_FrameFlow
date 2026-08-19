@@ -7,9 +7,33 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strconv"
 
 	"github.com/viruslox/vlx_frameflow/internal/network"
 )
+
+// ResolvePeerClientHostByID resolves a peer by an identifier that is either a
+// numeric slot or a client name, returning the client's in-tunnel API host. A
+// numeric id defers to ResolvePeerClientHost (which also honours legacy
+// single-client mode); a name requires a peer registry.
+func ResolvePeerClientHostByID(id, fallbackHost string) (string, error) {
+	if slot, err := strconv.Atoi(id); err == nil {
+		return ResolvePeerClientHost(slot, fallbackHost)
+	}
+
+	peersPath := network.ServerPeersPath()
+	if _, err := os.Stat(peersPath); err != nil {
+		return "", fmt.Errorf("client %q requested but no peer registry present", id)
+	}
+	peers, err := network.LoadPeers(peersPath)
+	if err != nil {
+		return "", err
+	}
+	if p, ok := network.FindPeerByName(peers, id); ok {
+		return p.ClientTunIP, nil
+	}
+	return "", fmt.Errorf("no client named %q in registry", id)
+}
 
 // ResolvePeerClientHost maps a peer slot to the client's in-tunnel API host.
 //
