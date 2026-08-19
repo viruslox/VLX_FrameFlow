@@ -135,6 +135,12 @@ func DeriveClientTunnelIdentity(slot int, clientTunIP, serverTunIP string, remot
 	}
 }
 
+// reservedNames are client names that would collide with a fixed frontend
+// route and therefore cannot be used as an addressable peer handle.
+var reservedNames = map[string]struct{}{
+	"health": {},
+}
+
 // validatePeers enforces slot bounds and cross-peer uniqueness of the resources
 // that would otherwise silently clash (slot/interface, port, address pair).
 func validatePeers(peers []MlvpnPeer) error {
@@ -156,6 +162,9 @@ func validatePeers(peers []MlvpnPeer) error {
 		}
 		if !namePattern.MatchString(p.Name) {
 			return fmt.Errorf("peer %q (slot %d): name must be lowercase alphanumeric with internal hyphens (DNS-label safe)", p.Name, p.Slot)
+		}
+		if _, bad := reservedNames[p.Name]; bad {
+			return fmt.Errorf("peer %q (slot %d): name is reserved and cannot be used as a client handle", p.Name, p.Slot)
 		}
 		if _, dup := seenName[p.Name]; dup {
 			return fmt.Errorf("duplicate peer name %q", p.Name)
