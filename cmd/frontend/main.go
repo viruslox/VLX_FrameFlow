@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/viruslox/vlx_frameflow/internal/config"
@@ -182,14 +184,46 @@ func rewriteAPIByName(rest, name string) string {
 	return rest
 }
 
-// isKnownClient reports whether name matches a configured peer. It reads the
-// registry per call so adding a client needs no frontend restart; the registry
-// is small and frontend traffic is low.
+var (
+	peersCache   []network.MlvpnPeer
+	peersModTime time.Time
+	peersMutex   sync.RWMutex
+)
+
+// isKnownClient reports whether name matches a configured peer. It caches the
+// loaded peers and re-reads the registry only if the file modification time
+// changes, ensuring fast checks even under heavy static asset load.
 func isKnownClient(name string) bool {
-	peers, err := network.LoadPeers(network.ServerPeersPath())
+	path := network.ServerPeersPath()
+	info, err := os.Stat(path)
 	if err != nil {
 		return false
 	}
-	_, ok := network.FindPeerByName(peers, name)
+
+	modTime := info.ModTime()
+
+	peersMutex.RLock()
+	cacheValid := modTime.Equal(peersModTime) && peersCache != nil
+	var currentPeers []network.MlvpnPeer
+	if cacheValid {
+		currentPeers = peersCache
+	}
+	peersMutex.RUnlock()
+
+	if !cacheValid {
+		peersMutex.Lock()
+		// Re-check in case another goroutine updated it while we waited
+		if !modTime.Equal(peersModTime) || peersCache == nil {
+			loadedPeers, err := network.LoadPeers(path)
+			if err == nil {
+				peersCache = loadedPeers
+				peersModTime = modTime
+			}
+		}
+		currentPeers = peersCache
+		peersMutex.Unlock()
+	}
+
+	_, ok := network.FindPeerByName(currentPeers, name)
 	return ok
 }
