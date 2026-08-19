@@ -12,7 +12,7 @@ func regWithNames(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "etc"), 0755)
 	os.WriteFile(filepath.Join(dir, "etc", "peers.yaml"),
 		[]byte("peers:\n  - slot: 0\n    name: lobby\n    key: a\n  - slot: 2\n    name: backpack-02\n    key: b\n"), 0600)
-	os.Setenv("VLXsuite_DIR", dir)
+	t.Setenv("VLXsuite_DIR", dir)
 }
 
 func TestByID_Name(t *testing.T) {
@@ -39,7 +39,7 @@ func TestByID_Slot(t *testing.T) {
 }
 
 func TestByID_NameWithoutRegistry(t *testing.T) {
-	os.Setenv("VLXsuite_DIR", t.TempDir()) // no etc/peers.yaml
+	t.Setenv("VLXsuite_DIR", t.TempDir()) // no etc/peers.yaml
 	if _, err := ResolvePeerClientHostByID("lobby", "x"); err == nil {
 		t.Fatal("name without registry should error")
 	}
