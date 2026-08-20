@@ -66,7 +66,7 @@ The Server's MediaMTX instance maintains a continuous background loop (`/offline
 
 To prevent rapid stream flapping during minor cellular jitters, the Client employs a **State Latch** on the MLVPN tunnel utilizing a **Network Hysteresis** logic. The Client continuously attempts to ping the Server tunnel (`10.1.10.1`). Instead of a binary success/fail check, the system performs a retry loop (up to 3 consecutive ping attempts with a small delay). It will only drop the bonded UDP route and fallback to a standard unbonded route if the tunnel explicitly stays down and all 3 ping checks fail.
 
-Furthermore, to ensure application stability before initializing the FFmpeg encoder pipeline, the core implements **Strict URL Validation** on both `RTSP` and `SRT` streaming endpoints using Go's native `net/url` parser. The ingest will gracefully reject malformed URLs prior to execution.
+Furthermore, to ensure application stability before initializing the FFmpeg encoder pipeline, the core implements **Strict URL Validation** on streaming endpoints such as `SRT` using Go's native `net/url` parser. The ingest will gracefully reject malformed URLs prior to execution.
 
 ## Security & Execution Flow
 

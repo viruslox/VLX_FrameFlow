@@ -13,7 +13,9 @@ MEDIAMTX_DIR="/opt/mediamtx"
 # Explicitly sets the system to require root execution for main orchestrator daemons,
 # while utilizing /etc/systemd/system/ and multi-user.target for unit files.
 FRAMEFLOW_ROLE="SERVER"
+# Password for the MPTCP proxy.
 MPTCP_PROXY_PASS=""
+# Key for the single-client MLVPN tunnel.
 # MLVPN_KEY is used only for the legacy single-client tunnel (no peers.yaml).
 # For multiple clients, define each one in etc/peers.yaml (see peers.yaml.template);
 # when that file is present it takes precedence and each peer carries its own key.
