@@ -239,9 +239,28 @@ Note: Adjust the port (`8080` by default) to match your `vlx_frontend` bind port
 
 | Variable | Description |
 | :--- | :--- |
+| `FRAMEFLOW_USER` | The dedicated, unprivileged user that runs the background services (default: `frameflow`). |
 | `MLVPN_SERVER_IP` | The remote server IP for MLVPN (UDP traffic). |
+| `MLVPN_SLOT` | MLVPN tunnel identity (client). Must match this client's peer slot on the server. |
+| `MLVPN_CLIENT_TUN_IP` | Optional override for client TUN IP. |
+| `MLVPN_SERVER_TUN_IP` | Optional override for gateway/server TUN IP. |
+| `MLVPN_REMOTE_PORT` | Optional override for remote UDP port. |
 | `SHADOWSOCKS_SERVER_IPS` | The remote server IP(s) for Shadowsocks bonding (TCP proxy traffic). |
 | `AP_PASSWORD` | WPA2 passphrase for the generated Access Point. Automatically generated if left empty. |
+| `MPTCP_PROXY_PASS` | Password for the MPTCP proxy. |
+| `MLVPN_KEY` | Key for the single-client MLVPN tunnel. |
+| `DB_DSN` | SQLite database DSN for cameraman configuration (default: `/opt/VLX_FrameFlow/var/frameflow.db`). |
+| `CAM_PATH_PREFIX` | Remote MediaMTX path prefix (default: `cameraman`). |
+| `CAM_MAX_RESOLUTION` | Maximum fallback video resolution for Cameraman (default: `1920x1080`). |
+| `CAM_MAX_FPS` | Maximum fallback video FPS for Cameraman (default: `30`). |
+| `bind_address` | Backend API bind address (default: `127.0.0.1`). |
+| `bind_port` | Backend API bind port (default: `9090`). |
+| `allowed_origins` | Comma-separated list of allowed CORS origins for the API. |
+| `bkend_user1` / `bkend_pass1` | First tier of backend API credentials. |
+| `backend_address` | Target backend address for the Svelte frontend (default: `127.0.0.1`). |
+| `backend_port` | Target backend port for the Svelte frontend (default: `9090`). |
+| `FF_GUI_USER` / `FF_GUI_PASS` | Credentials used to authenticate to the Svelte Control Panel frontend. |
+| `client_crt` / `client_key` | Optional zero-trust mTLS paths for Svelte Control Panel to authenticate against the backend. |
 | `relay_client_host` | The remote Client API IP accessed via MLVPN tunnel (default: `10.1.10.2`). |
 | `relay_client_port` | The remote Client API Port accessed via MLVPN tunnel (default: `9090`). |
 | `use_relay` | For Frontend settings: `true` routes all UI module commands through the relay (`api/v1/relay/...`), useful when hosting UI on Server. `false` targets local Client API. |
@@ -252,11 +271,10 @@ Note: Adjust the port (`8080` by default) to match your `vlx_frontend` bind port
 
 ### Streaming Endpoints
 
-Both `RTSP_URL` and `SRT_URL` endpoints undergo **Strict URL Validation** before they are actively bound to the ingest pipeline. A malformed URL configuration (e.g., missing scheme) will proactively prevent the FFmpeg streaming unit from attempting to start, and instead will yield a direct descriptive error in the log.
+Both endpoints undergo **Strict URL Validation** before they are actively bound to the ingest pipeline. A malformed URL configuration (e.g., missing scheme) will proactively prevent the FFmpeg streaming unit from attempting to start, and instead will yield a direct descriptive error in the log.
 
 | Variable | Description |
 | :--- | :--- |
-| `RTSP_URL` | Base RTSP URL, primarily used for **Standard Ingest** on internal networks. |
 | `SRT_URL` | Base SRT URL, explicitly reserved for **Bonded Ingest** over the MLVPN tunnel. Safely auto-parses `publish:` StreamID credentials (`user:pass`). |
 
 **Example:**
@@ -269,8 +287,7 @@ srt://10.1.10.1:8890?streamid=publish:stream_name:user:pass
 | Variable | Description |
 | :--- | :--- |
 | `GPSPORT` | gpsd local port (default: `1198`). |
-| `API_URL` | Remote HTTP/HTTPS telemetry endpoint. |
-| `AUTH_TOKEN` | Bearer token for API authentication. |
+| `gps_target_url` | Remote HTTP/HTTPS telemetry endpoint. |
 
 ---
 

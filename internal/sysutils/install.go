@@ -166,26 +166,30 @@ func InstallBinary(isServer bool) error {
 	}
 	Info("Binary successfully installed to %s", targetPath)
 
-	// Explicitly copy required client binaries
+	// Explicitly copy required binaries (including frontend for both roles)
 	srcDir := filepath.Dir(exePath)
-	if !isServer {
-		requiredBinaries := []string{"VLX_FrameFlow", "vlx_frontend"}
-		for _, bin := range requiredBinaries {
-			binPath := filepath.Join(srcDir, bin)
-			if _, err := os.Stat(binPath); err == nil {
+	var requiredBinaries []string
+	if isServer {
+		requiredBinaries = []string{"vlx_frontend"}
+	} else {
+		requiredBinaries = []string{"VLX_FrameFlow", "vlx_frontend"}
+	}
+
+	for _, bin := range requiredBinaries {
+		binPath := filepath.Join(srcDir, bin)
+		if _, err := os.Stat(binPath); err == nil {
+			tgt := filepath.Join(installTargetDir, bin)
+			if err := copyFile(binPath, tgt, 0755); err == nil {
+				Info("Required binary %s explicitly copied to %s", bin, tgt)
+			}
+		} else {
+			// Try with arch suffix for the current OS/Arch if raw name not found
+			sfx := "_" + runtime.GOARCH
+			sfxPath := filepath.Join(srcDir, bin+sfx)
+			if _, err := os.Stat(sfxPath); err == nil {
 				tgt := filepath.Join(installTargetDir, bin)
-				if err := copyFile(binPath, tgt, 0755); err == nil {
-					Info("Required binary %s explicitly copied to %s", bin, tgt)
-				}
-			} else {
-				// Try with arch suffix for the current OS/Arch if raw name not found
-				sfx := "_" + runtime.GOARCH
-				sfxPath := filepath.Join(srcDir, bin+sfx)
-				if _, err := os.Stat(sfxPath); err == nil {
-					tgt := filepath.Join(installTargetDir, bin)
-					if err := copyFile(sfxPath, tgt, 0755); err == nil {
-						Info("Required binary %s (from %s) explicitly copied to %s", bin, bin+sfx, tgt)
-					}
+				if err := copyFile(sfxPath, tgt, 0755); err == nil {
+					Info("Required binary %s (from %s) explicitly copied to %s", bin, bin+sfx, tgt)
 				}
 			}
 		}

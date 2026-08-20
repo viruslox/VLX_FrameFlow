@@ -14,11 +14,15 @@ MEDIAMTX_DIR="/opt/mediamtx"
 AP_PASSWORD=""
 
 # GPS Tracker
+# gpsd local port (default: 1198)
+GPSPORT="1198"
+# Remote HTTP/HTTPS telemetry endpoint for pushing GPS data
 gps_target_url=""
 
 # Network settings
 # Specifies role-aware privilege scoping. Do not manually force unless required.
 FRAMEFLOW_ROLE=""
+# The remote server IP for MLVPN (UDP traffic).
 MLVPN_SERVER_IP=""
 # MLVPN tunnel identity (client). Must match this client's peer slot on the
 # server (see the server's etc/peers.yaml). Slot k derives:
@@ -29,9 +33,11 @@ MLVPN_SLOT="0"
 MLVPN_CLIENT_TUN_IP=""
 MLVPN_SERVER_TUN_IP=""
 MLVPN_REMOTE_PORT=""
-# Supports native Dual-Stack TCP bonding (comma-separated IPv4, IPv6)
+# The remote server IP(s) for Shadowsocks bonding (TCP proxy traffic). Supports native Dual-Stack TCP bonding (comma-separated IPv4, IPv6)
 SHADOWSOCKS_SERVER_IPS=""
+# Password for the MPTCP proxy.
 MPTCP_PROXY_PASS=""
+# Key for the single-client MLVPN tunnel.
 MLVPN_KEY=""
 
 # Cameraman
@@ -51,11 +57,14 @@ CAM_MAX_FPS="30"
 # Client API
 # This is the native backend API on the Client device (SBC).
 # It serves local UI requests and remote requests routed through the Server API relay.
+# Backend API bind address (default: 127.0.0.1).
 bind_address=127.0.0.1
+# Backend API bind port (default: 9090).
 bind_port=9090
-# (comma-separated list of allowed CORS origins)
+# Comma-separated list of allowed CORS origins for the API.
 allowed_origins="127.0.0.1"
 
 # Backend Credentials
+# First tier of backend API credentials.
 bkend_user1=admin
 bkend_pass1=admin
