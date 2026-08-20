@@ -22,7 +22,9 @@ func runInteractiveMenu() {
 
 		switch opt {
 		case "1":
-			setupServerComponents()
+			if err := setupServerComponents(); err != nil {
+				sysutils.Error("Server setup did not complete: %v", err)
+			}
 		case "2":
 			sysutils.RunRollback()
 		case "3":

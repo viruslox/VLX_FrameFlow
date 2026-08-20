@@ -11,8 +11,15 @@ import (
 func setupServerComponents() error {
 	sysutils.InstallShadowsocks()
 	sysutils.InstallMlvpn()
-	network.SetupMptcpProxy()
-	network.SetupMlvpnBonding()
+	if err := network.SetupMptcpProxy(); err != nil {
+		sysutils.Error("MPTCP proxy setup failed: %v", err)
+	}
+	if err := network.SetupMlvpnBonding(); err != nil {
+		sysutils.Error("MLVPN bonding setup failed: %v", err)
+		sysutils.Error("No MLVPN tunnel services were created. Fix the issue above and re-run setup. "+
+			"Peer names in %s must be lowercase, DNS-label safe (letters, digits, internal hyphens).", network.ServerPeersPath())
+		return err
+	}
 
 	sysutils.Info("The following ports are required for the server components:")
 	sysutils.Info("- 8889/tcp (mediamtx WEBRTC)")
