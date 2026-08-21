@@ -1,163 +1,191 @@
-# Architecture
+# Architecture — VLX FrameFlow
 
-The VLX FrameFlow suite operates via a robust, multi-binary architecture designed specifically to segment the distinct responsibilities required of field edge devices (SBCs) and remote relay nodes (VPS).
+> **Part of the VLX Stream Flow ecosystem — Edge Acquisition & Transport tier.**
+> This document details FrameFlow's internal design and its contracts with the sibling services **VLX VisionBridge** and **VLX ChatBridge**.
 
-This document serves as a deep dive into the system's design, operational flow, security implementation, and execution context.
+FrameFlow operates as a **multi-binary architecture** that segments the responsibilities of field edge devices (SBCs) and remote relay nodes (VPS). It originates the ecosystem's live A/V feed and telemetry stream.
 
-## System Overview
+---
+
+## The VLX Stream Flow ecosystem
+
+VLX Stream Flow is a self-hosted, end-to-end broadcasting stack composed of three cooperating services:
+
+| Project | Tier | Responsibility | |
+| :--- | :--- | :--- | :--- |
+| **VLX FrameFlow** | Edge & Transport | Bonded uplink (MLVPN + MPTCP), SBC multi-camera SRT encode, GPS telemetry, VPS relay | **← this repository** |
+| **VLX VisionBridge** | Composition | Headless Chromium-DOM scene compositor + GStreamer capture → MediaMTX restream | |
+| **VLX ChatBridge** | Control & Engagement | Twitch/YouTube events, Discord audio gateway, overlays, and the ecosystem command router | |
 
 ```mermaid
-graph TD
-    subgraph "Field Unit (SBC / Client)"
-        A[VLX_FrameFlow Binary] -->|Manages| B(Network Interfaces & Access Point)
-        A -->|Encodes| C(Cameraman: v4l2/FFmpeg)
-        A -->|Collects| D(GPS & System Telemetry)
-        C -->|UDP SRT Stream| E{MLVPN Tunnel}
-        D -->|TCP Data| F{MPTCP Proxy}
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, monospace'}}}%%
+flowchart LR
+    classDef ff  fill:#1f6f5c,stroke:#0b3b30,color:#fff;
+    classDef vb  fill:#3b5bdb,stroke:#1e3a8a,color:#fff;
+    classDef cb  fill:#7048e8,stroke:#3b2a86,color:#fff;
+    classDef mtx fill:#b08900,stroke:#6b5300,color:#fff;
+    classDef ext fill:#495057,stroke:#212529,color:#fff;
+
+    subgraph EDGE["FIELD UNIT · SBC"]
+        FFC["FrameFlow Client<br/>cameraman · FFmpeg · GPS"]:::ff
+    end
+    subgraph VPS["REFERENCE VPS · relay + control + composite"]
+        FFS["FrameFlow Server<br/>relay · firewall"]:::ff
+        RMTX(("MediaMTX ingest<br/>zero-drop fallback")):::mtx
+        CB["ChatBridge<br/>events · audio · overlays · router"]:::cb
+        VB["VisionBridge<br/>Chromium DOM · GStreamer"]:::vb
+        VMTX(("MediaMTX egress<br/>RTMPS / TLS")):::mtx
+    end
+    subgraph PLAT["PLATFORMS"]
+        TW["Twitch / YouTube"]:::ext
+        DC["Discord"]:::ext
     end
 
-    subgraph "Remote Node (VPS / Server)"
-        E -->|Aggregates| G[VLX_FrameFlow_SRV Binary]
-        F -->|Bonds| G
-        G -->|Forwards| H[MediaMTX Restreamer]
-    end
-
-    subgraph "Control Surface"
-        I[vlx_frontend Binary] -.->|mTLS Authenticated API| A
-    end
+    FFC  -- "SRT · bonded (MLVPN)" --> RMTX
+    FFC  -- "POST /api/gps (MLVPN)" --> CB
+    FFC  -. "MLVPN tunnel 10.1.10.x" .- FFS
+    CB   -- "HTTP relay /api/v1/relay/*" --> FFS
+    RMTX -- "WebRTC/WHEP → Z-layer" --> VB
+    CB   -- "IPC /tmp/vlx_control.sock" --> VB
+    VB   -- "RTMP 127.0.0.1:1999/streamout" --> VMTX
+    VMTX -- "RTMPS" --> TW
+    CB   -- "EventSub · Helix · API" --> TW
+    CB   <-- "voice + chat" --> DC
 ```
 
-## Binary Components
+### Reference topology
 
-The project has been refactored from a monolithic bash structure into a compiled Go multi-binary ecosystem:
+The reference deployment is a **single VPS** that co-hosts the FrameFlow Server, ChatBridge, and VisionBridge (each with its MediaMTX role), reachable from the SBC over the MLVPN tunnel (`10.1.10.x`). Components may be split across hosts; the contracts below are host-agnostic.
 
-1. **`VLX_FrameFlow` (The Client):** Exclusively deployed on Single Board Computers (like Orange Pi 5 Plus or Radxa Rock 5T). Responsible for hardware interactions: capturing video via v4l2, managing hostapd/networkd, and gathering GPS data. It serves the mTLS-protected API.
-2. **`VLX_FrameFlow_SRV` (The Server):** Exclusively deployed on a Virtual Private Server (VPS). Lightweight, focusing strictly on relaying traffic, receiving bonded connections, and enforcing UFW firewall rules.
-3. **`vlx_frontend` (The UI):** A standalone web server encapsulating a pre-built Svelte SPA (`//go:embed`). Designed to run remotely on an operator's machine or in the cloud to manage the Field Unit via secure APIs. The frontend utilizes parallel REST polling (`Promise.all`) to dynamically fetch backend state, features a semantic parser for translating systemd string statuses (e.g., 'active', 'inactive', 'failed'), organizes UI components via CSS Grid layout, and streams text console output utilizing an `ansi-to-html` converter for colorized logs.
+---
 
-## API Framework & Routing
+## VLX Stream Flow contracts
 
-The core API has transitioned to utilizing the highly performant `Gin` framework (`github.com/gin-gonic/gin`). HTTP routes are registered using native Gin handler signatures (`func(c *gin.Context)`) rather than wrapping standard `http.HandlerFunc` components. Global CORS middleware handles OPTIONS requests automatically.
+> These four contracts are **normative for the whole ecosystem** and are reproduced verbatim in each project's `ARCHITECTURE.md`. Change them in lockstep across all three repositories.
 
-### Operational Endpoints
+### Canonical port & endpoint map
 
-The unprivileged user interacts with the backend components via a standardized REST API structured primarily as `/api/<module>/{start,stop,status,reset}`. Key operational endpoints include:
+| Service | Component | Bind (default) | Purpose |
+| :--- | :--- | :--- | :--- |
+| FrameFlow | Client API (Gin) | `9090` | `/api/<module>/…` on the SBC |
+| FrameFlow | Server relay | `127.0.0.1:9090` | `/api/v1/relay/*`, `/api/v1/peer/:id/*` |
+| FrameFlow | Frontend (Svelte) | `8080` | Control panel + telemetry WS `/ws` |
+| FrameFlow | MediaMTX ingest | SRT `8890` · RTMP `1935` · RTMPS `1936` · WebRTC `8889` · API `127.0.0.1:9997` | `cameraman` / `wificam` paths |
+| FrameFlow | gpsd | `1198` | local GPS daemon |
+| ChatBridge | Server (overlays + GPS ingest) | `8000` (test `8001`) | overlays, `POST /api/gps` |
+| ChatBridge | Control API | `127.0.0.1:8760` | management REST + console WS |
+| ChatBridge | Frontend (Svelte) | `8090` | GUI → control API |
+| ChatBridge | Connector | `/tmp/vlx_control.sock` | IPC **writer** → VisionBridge |
+| VisionBridge | Control API | `127.0.0.1:8770` | management REST + console WS |
+| VisionBridge | Frontend (Svelte) | `8091` | GUI → control API |
+| VisionBridge | Overlay/WS server | `50051` (WebRTC `50000–50050`) | Chromium DOM sync |
+| VisionBridge | Connector | `/tmp/vlx_control.sock` | IPC **listener** ← ChatBridge |
+| VisionBridge | MediaMTX egress | RTMP `1999` · RTMPS `1936` · SRT `8890` | `streamout` restream |
 
-- **`/api/frameflow/client/reset`**: Initiates a full reset of client networking and bonding.
-- **`/api/gps/start` \| `stop` \| `status`**: Manages the transient systemd user unit for the GPS telemetry process.
-- **`/api/mediamtx/start` \| `stop` \| `status`**: Controls the local MediaMTX static user service.
-- **`/api/cameraman/start` \| `stop` \| `status`**: Orchestrates FFmpeg encoding pipelines directly to the MediaMTX API.
-- **`/api/frameflow/ap/start` \| `stop` \| `status`**: Triggers internal privilege escalation to manipulate `hostapd` and network interfaces.
+> ⚠️ **Co-location deconfliction:** on the single-VPS reference topology the FrameFlow ingest MediaMTX and the VisionBridge egress MediaMTX **both** default to RTMPS `1936` and SRT `8890`. Assign distinct ports per instance (e.g. move VisionBridge's MediaMTX RTMPS to `1937` / SRT to `8891`) before running them on the same host.
 
-## Unified Configuration Paradigm
+### 1. Connector (IPC) contract — ChatBridge → VisionBridge
 
-All Go daemons (`bonding.go`, `mediamtx.go`, etc.) across the suite expect a standardized configuration filename. To prevent logic fragmentation between the Client and Server roles, the `install.go` logic safely maps divergent templates (`frameflow.settings.template` and `frameflow_srv.settings.template`) into a single universally named `/opt/VLX_FrameFlow/etc/frameflow.settings` file during installation.
+Transport: **newline-delimited JSON over a Unix domain socket** (`/tmp/vlx_control.sock`). ChatBridge is the writer (`connector.ipc_control_out`); VisionBridge is the listener (`connector.ipc_control_in`). *(There is no ZeroMQ; the legacy token `[ZMQ_CONTROL]` is retained only for backward compatibility in command files.)*
 
-## Network Bonding Architecture
+Envelope:
 
-Ensuring uninterrupted, high-bandwidth streaming from the field requires resilient network bonding. The suite achieves this through a dual-protocol aggregation strategy:
+```json
+{ "event_id": "uuid", "timestamp": 1700000000, "action": "…", "target": "…", "payload": { "enabled": true, "text": "…" } }
+```
 
-*   **UDP Traffic (Streaming):** Handled exclusively by **MLVPN**. MLVPN creates multiple concurrent tunnels over available physical interfaces (e.g., Ethernet + multiple Cellular Modems) to aggregate bandwidth for the UDP-based SRT video streams.
-*   **TCP Traffic (Telemetry/API - Native Dual-Stack TCP Bonding):** Handled by **MPTCP** (MultiPath TCP) acting alongside `shadowsocks-libev` and `v2ray-plugin`. The Go parser dynamically converts comma-separated IPs into a JSON array for `shadowsocks-libev`. This allows mobile backpacks (which often favor IPv6 carrier routing) to establish concurrent IPv4 and IPv6 tunnels to the Server simultaneously, empowering the MPTCP kernel module to dynamically balance packets over the lowest-latency path.
+| `action` | `target` | `payload` | Effect on VisionBridge |
+| :--- | :--- | :--- | :--- |
+| `set_input_state` | `stream` | `{enabled}` | Enable/disable output; disabling SIGKILLs FFmpeg. |
+| `set_input_state` | `overlay@layerN` | `{enabled, text=path}` | Toggle Z-layer *N*; set its path when enabling. |
+| `set_input_state` | `volume@layerN` | `{text="0..100"}` | Set Z-layer *N* volume (live, no restart). |
+| `reload` | `chromium` | `{}` | Restart the Chromium DOM engine. |
+| `apply_template` | — | `{text=template_filename}` | Apply a stored Z-layout template. |
 
-### Seamless Fallback Pipeline (Zero-Drop)
+**Known limitation (see incongruousness log):** ChatBridge's `[ZMQ_CONTROL]`/`ipc_control` parser only forwards the `text`/`path` field for `set_input_state`; `apply_template` cannot yet carry its template name from ChatBridge, and pass-through events emitted as `trigger_event` are not recognised by VisionBridge. Drive `apply_template` over the socket directly until the parser is extended.
 
-The Server's MediaMTX instance maintains a continuous background loop (`/offline`) using `ffmpeg -stream_loop`. When the Client backpack loses 4G connectivity, MediaMTX natively switches the `/zainetto` path to the `/offline` fallback without terminating the TCP/UDP connection to downstream consumers (like VisionBridge or OBS). This prevents stream buffering or crashing on the final Twitch output.
+### 2. Command / webhook contract — ChatBridge → FrameFlow
 
-To prevent rapid stream flapping during minor cellular jitters, the Client employs a **State Latch** on the MLVPN tunnel utilizing a **Network Hysteresis** logic. The Client continuously attempts to ping the Server tunnel (`10.1.10.1`). Instead of a binary success/fail check, the system performs a retry loop (up to 3 consecutive ping attempts with a small delay). It will only drop the bonded UDP route and fallback to a standard unbonded route if the tunnel explicitly stays down and all 3 ping checks fail.
+ChatBridge reaches the SBC through the FrameFlow **Server relay**, never the SBC API directly:
 
-Furthermore, to ensure application stability before initializing the FFmpeg encoder pipeline, the core implements **Strict URL Validation** on streaming endpoints such as `SRT` using Go's native `net/url` parser. The ingest will gracefully reject malformed URLs prior to execution.
+```
+POST http://127.0.0.1:9090/api/v1/relay/<path>      →  MLVPN  →  SBC /api/<path>
+```
 
-## Security & Execution Flow
+Valid `<path>` verbs (Client API): `frameflow/client/{start,stop,status,reset}`, `frameflow/ap/{start,stop,status}`, `frameflow/bonding/{start,stop,status}`, `cameraman/{start,stop,status,list-dev}`, `mediamtx/{start,stop,status}`, `gps/{start,stop,status}`. Example: `POST /api/v1/relay/cameraman/start` with `{"device":"V0A1"}`.
 
-### Zero-Trust mTLS
+### 3. GPS telemetry contract — FrameFlow → ChatBridge
 
-To secure the connection between the remote `vlx_frontend` and the SBC's `VLX_FrameFlow` API, the system implements Mutual TLS (mTLS):
-1.  On first run, the Client generates a local Certificate Authority (CA) in `/opt/VLX_FrameFlow/certs/`.
-2.  The Client provisions a signed `.p12` or `.pem` Client Certificate for authorized remote UI instances.
-3.  The core API uses `tls.RequireAndVerifyClientCert`, refusing any connection not signed by the local CA.
+The SBC GPS sender POSTs, at ~1 msg / 5 s, to `gps_target_url` (the ChatBridge `POST /api/gps` receiver, typically `http://10.1.10.1:8000/api/gps` over MLVPN). Body:
 
-### Multi-Client Deterministic Slots and Configuration Roles
+```json
+{ "lat": 0.0, "lon": 0.0, "alt": 0.0, "pos_error": 0.0, "speed": 0.0 }
+```
 
-The suite supports multi-client MLVPN tunneling utilizing a deterministic slot model configured via `/opt/VLX_FrameFlow/etc/peers.yaml` on the server.
-- Each client is assigned an integer slot in `peers.yaml`. This slot deterministically derives the tunnel interface (`mlvpn{slot}`), UDP port (`5080+slot`), and the inner tunnel IP subnet (`10.1.{10+slot}.x`).
-- To enforce routing, peer names defined in `peers.yaml` must be lowercase and DNS-label safe.
+ChatBridge re-wraps this as `{"type": "<overlay.gps.event_type|gps>", "data": {…}}` and broadcasts it over WebSocket to `gps_overlay.html` (which also accepts the legacy type `gps_update`) at 60 fps. The endpoint is unauthenticated by design; Layer-3 MLVPN isolation secures it.
 
-The daemon resolves architecture nuances (e.g. AMD64 vs ARM64) automatically. Furthermore, the role configuration (`FRAMEFLOW_ROLE` in settings, empty for Client, `SERVER` for Server) dynamically instructs the daemon on which privilege scoping and systemd management mechanisms (e.g., system vs user) should be utilized.
+### 4. Media-path contract — FrameFlow → VisionBridge
+
+SBC cameras → FrameFlow Client FFmpeg **SRT (bonded, MLVPN)** → FrameFlow Server **MediaMTX** (`cameraman`/`wificam`, SRT `8890`, zero-drop `/offline` fallback) → VisionBridge consumes the feed as a **Chromium Z-layer** (a WebRTC/WHEP or iframe URL pointing at the ingest MediaMTX) → VisionBridge composites and restreams onward (contract handled inside VisionBridge).
+
+---
+
+## Binary components
+
+1. **`VLX_FrameFlow` (Client)** — SBC-only (e.g. Orange Pi 5 Plus, Radxa Rock 5T). Captures video via V4L2, manages `hostapd`/`networkd`, gathers GPS, and serves the mTLS-protected API.
+2. **`VLX_FrameFlow_SRV` (Server)** — VPS-only. Relays traffic, receives bonded connections, enforces UFW rules, and exposes the command relay.
+3. **`vlx_frontend` (UI)** — Standalone web server embedding a pre-built Svelte SPA (`//go:embed`). Uses parallel REST polling, semantic systemd-state parsing, CSS-grid layout, and `ansi-to-html` consoles.
+
+## API framework & routing
+
+The API uses **Gin** with native handler signatures and global CORS middleware. `RegisterRoutes` strictly separates duties via an `isServer` flag: the **Server** exposes *only* the relay (`/api/v1/relay/*path`, `/api/v1/peer/:id/*path`); the **Client** exposes *only* local handlers (`/api/frameflow/…`, `/api/cameraman/…`, `/api/mediamtx/…`, `/api/gps/…`, plus `/api/ws/ticket`).
+
+## Configuration paradigm
+
+All Go daemons expect a single universally named `/opt/VLX_FrameFlow/etc/frameflow.settings`. Installation safely maps the divergent role templates (`frameflow.settings.template`, `frameflow_srv.settings.template`) into that one filename, preventing logic fragmentation between roles. The file is **shell-sourced** `KEY="value"` (env-style) — distinct from the YAML settings used by ChatBridge and VisionBridge, because FrameFlow's units source it directly as environment.
+
+## Network bonding architecture
+
+- **UDP (streaming):** handled by **MLVPN**, aggregating multiple physical interfaces (Ethernet + cellular modems) for SRT video.
+- **TCP (telemetry/API/internet):** handled by **MPTCP** with `shadowsocks-libev` + `v2ray-plugin`. The Go parser converts comma-separated IPs into a JSON array, enabling concurrent IPv4/IPv6 tunnels so the MPTCP kernel module balances over the lowest-latency path.
+
+### Zero-drop fallback & hysteresis
+
+The Server's MediaMTX maintains a background `ffmpeg -stream_loop` on an `/offline` path; on connectivity loss it swaps the live path to `/offline` without terminating downstream consumers (VisionBridge / OBS), preventing buffering or crashes on the final output. To avoid flapping, the Client applies a **state latch** with **network hysteresis**: it drops the bonded route only after 3 consecutive failed pings to the server tunnel (`10.1.10.1`).
+
+## Security & execution flow
+
+### Zero-trust mTLS
+
+The Client generates a local CA on first run (`/opt/VLX_FrameFlow/certs/`), provisions signed client certificates for authorized remote UI instances, and enforces `tls.RequireAndVerifyClientCert`, rejecting any connection not signed by the local CA.
 
 ### "Build as User, Run as Root"
 
-The suite enforces a strict dichotomy between Client and Server roles regarding execution privilege and systemd architecture (guided by the `FRAMEFLOW_ROLE` variable):
+Unprivileged build (`build.sh`) → root install (`internal/sysutils.InstallBinary()`) places binaries in `/opt/VLX_FrameFlow/bin/` and templates in `/opt/VLX_FrameFlow/etc/`. **Client** services run as `$FRAMEFLOW_USER` under user-space systemd (lingering required); all client CLI modules refuse root. **Server** orchestration requires root and drops privileges for exposed services.
 
-1.  **Build:** Unprivileged compilation via `build.sh`.
-2.  **Install:** Executing the compiled binary as root triggers `internal/sysutils.InstallBinary()`.
-3.  **Deploy:** The binaries place themselves into `/opt/VLX_FrameFlow/bin/` and configure templates in `/opt/VLX_FrameFlow/etc/`.
-4.  **Run (CLIENT):** On the SBC/Field Unit, background services must strictly execute as the dedicated, unprivileged `$FRAMEFLOW_USER`. Systemd management uses User-Space Systemd (`systemctl --user`). Unit files are generated in `~/.config/systemd/user/` and explicitly target `default.target`. **Important:** Systemd Lingering (`loginctl enable-linger`) must be enabled by root during initial setup to allow background execution without an active SSH session. All Client CLI modules implement strict runtime constraints preventing root execution (`if os.Geteuid() == 0`).
-5.  **Run (SERVER):** On the VPS/Relay Node, the main daemon strictly requires `root` execution (UID 0) to orchestrate routing and UFW firewall rules. Systemd management uses System-Space Systemd (`/etc/systemd/system/`) and targets `multi-user.target`. To maintain security, the server relies on **Privilege Dropping** (`User=`, `Group=`) inside the unit templates for specific exposed services (like MediaMTX) to minimize the blast radius. ALL Server orchestrator CLI modules enforce a root guard requiring root execution (`if os.Geteuid() != 0`).
+### AP privilege-escalation pattern
 
-### AP Module Privilege Escalation Pattern
+Unprivileged Client CLI commands wrap themselves in `sudo` to invoke hidden internal ops (e.g. `_ap_system_ops`) guarded by absolute root checks; once in the root context, system commands run without redundant `sudo`.
 
-The Access Point (AP) module within the Client architecture necessitates modifying system-level network configurations (`hostapd`, `systemd-networkd`, `systemd-resolved`) which requires root access. However, the Client CLI operates as an unprivileged user.
+### Server command forwarding
 
-To bridge this gap securely, the suite implements a strict internal privilege escalation pattern:
-- Unprivileged CLI commands wrap themselves in `sudo` to call hidden internal operations (e.g., `_ap_system_ops`).
-- These hidden operations are protected by absolute root guards (`if os.Geteuid() != 0 { log.Fatal(...) }`).
-- Once inside the root context, functions executing system commands (like restarting services via `sysutils.RunCommand`) do not redundantly include `sudo`.
+`VLX_FrameFlow_SRV api start` spins up the relay (`<bind_address>:<bind_port>`, default `127.0.0.1:9090`; HTTPS when server certs exist). Requests to `/api/v1/relay/*path` are reconstructed (body, query, headers) and forwarded to the Client API over MLVPN (`https://<relay_client_host>:<relay_client_port>/api<path>`, default `https://10.1.10.2:9090`), with `InsecureSkipVerify: true` — safe because the MLVPN tunnel is encrypted, isolated, and the Client uses self-signed local certs.
 
+## Module-specific behaviours
 
+- **Cameraman** — strict `net/url` SRT validation; fallback format selection by linear absolute-difference against `CAM_MAX_RESOLUTION`/`CAM_MAX_FPS` (H.264 copy → MJPEG → YUYV); SQLite DSN with `journal_mode(WAL)` + `busy_timeout(5000)` to avoid boot-time lock races.
+- **GPS telemetry** — non-blocking `gpsd` socket drain; 5-second POST rate limit; transient-unit cleanup via `systemctl --user reset-failed`.
+- **MediaMTX & bonding** — dynamic `runtime.GOARCH` asset resolution; static systemd service with `mediamtx.settings`; WebRTC/SRT/RTMP + internal API enabled, RTSP/HLS/WebTransport disabled; `wificam` uses an RTMP→SRT `runOnReady` forwarder while `cameraman` uses direct V4L2→SRT `runOnInit`.
 
-### Server API Command Forwarding
-
-To facilitate communication between companion applications (such as ChatBridge) running on the Server/VPS and the remote Client (SBC), the Server implements a local HTTP API relay (`handlers.go` Transparent Proxy logic).
-
-- The `VLX_FrameFlow_SRV api start` command spins up a local API relay server (binding to `<bind_address>:<bind_port>`, defaulting to `127.0.0.1:9090`). If server certificates are provided, it natively serves over HTTPS; otherwise, it falls back to plain HTTP.
-- Requests sent to the `/api/v1/relay/*path` endpoint are captured.
-- The Server reconstructs the request (seamlessly passing JSON bodies, query parameters, and headers) and forwards it directly to the native Client API over the secure MLVPN tunnel (`https://<relay_client_host>:<relay_client_port>/api<path>`, defaulting to `https://10.1.10.2:9090`).
-- It bypasses standard TLS verification (`InsecureSkipVerify: true`) for this specific internal tunnel communication. This is safe because the MLVPN tunnel (`10.1.10.x`) itself is strongly encrypted and isolated from the public internet, and the remote Client generates its own self-signed local TLS certificates.
-- The transparent proxy ensures the local companion app receives the exact HTTP response (status codes and body) generated by the Client.
-- The `RegisterRoutes` function strictly separates duties using an `isServer` flag: the Server exposes *only* the relay (`/api/v1/relay/*path`), while the Client exposes *only* the local command handlers (`/api/...`).
-
-### Separation of Duties (Bonding vs Routing)
-
-The dual-protocol nature ensures network reliability without cross-contamination:
-- **Shadowsocks (via MPTCP):** Handles all bonded outbound TCP internet traffic. This is used by the Client to reach the broader internet transparently via the proxy.
-- **MLVPN (UDP):** Handles the high-bandwidth SRT streams and the secure, bidirectional internal telemetry and API command routing between the Server (`10.1.10.1`) and Client (`10.1.10.2`).
-
-## Module-Specific Behaviors
-
-The system implements several highly specific optimizations and fail-safes per module:
-
-### Cameraman
-- **Strict URL Parsing:** Incorporates robust `net/url` parsing logic to validate SRT stream IDs.
-- **Fallback Format Selection:** Employs a linear absolute-difference algorithm against user-defined maximums (`CAM_MAX_RESOLUTION`, `CAM_MAX_FPS`) to intelligently select fallback video formats (preferring H.264 copy, then MJPEG, then YUYV) when exact formats are unavailable.
-- **SQLite Concurrency:** The backend SQLite database (`modernc.org/sqlite`) is configured with `_pragma=journal_mode(WAL)` and `_pragma=busy_timeout(5000)` in its DSN to inherently prevent 'database is locked' boot race conditions during concurrent module initialization.
-
-### GPS Telemetry
-- **Socket Draining:** Implements a non-blocking TCP socket drain pattern against `gpsd` to prevent TCP buffer desynchronization and data lag typical of high-frequency positioning data.
-- **Rate Limiting:** Enforces a strict 5-second rate limit on HTTP POST transmissions to external endpoints.
-- **Transient Cleanup:** Actively manages transient systemd units, executing `systemctl --user reset-failed` during cleanup to prevent unit name conflicts.
-
-### MediaMTX & Bonding (v2ray)
-- **Dynamic Architecture Resolution:** During initialization and updates, the system dynamically checks `runtime.GOARCH` to resolve and download correct asset architectures. This strictly prevents "Exec format error" failures when deploying across heterogeneous ARM and x86_64 fleets.
-- **Static Configuration:** MediaMTX natively operates as a static systemd user service with a statically generated configuration at `$VLXsuite_DIR/etc/mediamtx.settings`.
-- **Protocol Configuration:** MediaMTX is strictly configured to enable WebRTC, SRT, RTMP, and the internal API, while explicitly disabling RTSP, HLS, and WebTransport to optimize performance and security.
-- **Hook Distinction:** The `wificam` path acts as an RTMP-to-SRT auto-forwarder using a `runOnReady` hook, whereas the `cameraman` path relies on direct V4L2-to-SRT ingestion utilizing a `runOnInit` hook.
-
-## Filesystem Structure
-
-Following Linux File Hierarchy Standard (FHS) best practices, the global installation path is centralized:
+## Filesystem structure
 
 ```text
 /opt/VLX_FrameFlow/
-├── bin/
-│   ├── VLX_FrameFlow
-│   ├── VLX_FrameFlow_SRV
-│   └── vlx_frontend
-├── etc/
-│   ├── frameflow.settings
-│   ├── frontend.settings
-│   └── mediamtx.settings
-└── certs/
-    ├── ca.crt
-    └── server.crt
+├── bin/   ├── VLX_FrameFlow  ├── VLX_FrameFlow_SRV  └── vlx_frontend
+├── etc/   ├── frameflow.settings  ├── frontend.settings  └── mediamtx.settings
+└── certs/ ├── ca.crt  └── server.crt
 ```
+
+---
+
+<sub>VLX FrameFlow is part of the **VLX Stream Flow** ecosystem · [FrameFlow](https://github.com/viruslox/VLX_FrameFlow) · [VisionBridge](https://github.com/viruslox/VLX_VisionBridge) · [ChatBridge](https://github.com/viruslox/VLX_ChatBridge)</sub>
