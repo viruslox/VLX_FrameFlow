@@ -214,20 +214,20 @@ This file contains **all runtime environment variables**. It is generated during
 
 ### Apache Reverse Proxy
 
-To serve the Control Panel Frontend behind an Apache Reverse Proxy (for example, under the `/vlx/` path), ensure that the `proxy`, `proxy_http`, and `proxy_wstunnel` modules are enabled. Use the following configuration block:
+To serve the Control Panel Frontend behind an Apache Reverse Proxy (for example, under the `/frameflow/` path), ensure that the `proxy`, `proxy_http`, and `proxy_wstunnel` modules are enabled. Use the following configuration block:
 
 ```apache
-<Location /vlx/>
-    ProxyPass http://127.0.0.1:8080/
-    ProxyPassReverse http://127.0.0.1:8080/
-</Location>
+# ===== FrameFlow peer  (frontend :<port> — telemetry WS at /ws) =====
+RedirectMatch ^/frameflow$     /frameflow/
 
-<Location /vlx/ws>
-    ProxyPass ws://127.0.0.1:8080/ws
-    ProxyPassReverse ws://127.0.0.1:8080/ws
-</Location>
+ProxyPass        /frameflow/ws  ws://127.0.0.1:<port>/ws
+ProxyPass        /frameflow/    http://127.0.0.1:<port>/
+ProxyPassReverse /frameflow/    http://127.0.0.1:<port>/
 ```
-Note: Adjust the port (`8080` by default) to match your `vlx_frontend` bind port.
+
+And very important: frameflow peers GUI are at address: `http(s)://<apache address>:<port>/frameflow/peer/`
+
+Note: Adjust the `<port>` (`8080` by default) to match your `vlx_frontend` bind port.
 ### General Paths
 
 | Variable | Description |
@@ -239,6 +239,7 @@ Note: Adjust the port (`8080` by default) to match your `vlx_frontend` bind port
 
 | Variable | Description |
 | :--- | :--- |
+| `FRAMEFLOW_ROLE` | Specifies role-aware privilege scoping (`SERVER` or empty for client). |
 | `FRAMEFLOW_USER` | The dedicated, unprivileged user that runs the background services (default: `frameflow`). |
 | `MLVPN_SERVER_IP` | The remote server IP for MLVPN (UDP traffic). |
 | `MLVPN_SLOT` | MLVPN tunnel identity (client). Must match this client's peer slot on the server. |
@@ -268,6 +269,18 @@ Note: Adjust the port (`8080` by default) to match your `vlx_frontend` bind port
 **Note on Dual-Stack Bonding:** `SHADOWSOCKS_SERVER_IPS` natively supports Dual-Stack environments. You can provide comma-separated values (e.g., `"34.65.xx.xx, 2001:db8::1"`) to establish concurrent IPv4 and IPv6 tunnels simultaneously.
 
 **Note on Server Configuration:** The Server role configuration (`frameflow_srv.settings.template`) intentionally omits these IP variables. The Server is a destination node that securely binds to `0.0.0.0` and `::` locally, and therefore only requires the corresponding authentication keys (`MLVPN_KEY`, `MPTCP_PROXY_PASS`).
+
+### `/opt/VLX_FrameFlow/etc/peers.yaml` (Server Only)
+
+This file is used to configure multi-client MLVPN tunneling using a deterministic slot model. Each client is assigned an integer slot that dictates its tunnel interface (`mlvpn{slot}`), UDP port (`5080+slot`), and tunnel IP subnet (`10.1.{10+slot}.x`). Peer names must be lowercase and DNS-label safe.
+
+```yaml
+peers:
+  # Example peer
+  - name: client01
+    slot: 1
+    key: "YOUR-SECRET-KEY-1"
+```
 
 ### Streaming Endpoints
 

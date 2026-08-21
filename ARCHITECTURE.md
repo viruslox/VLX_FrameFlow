@@ -77,9 +77,17 @@ To secure the connection between the remote `vlx_frontend` and the SBC's `VLX_Fr
 2.  The Client provisions a signed `.p12` or `.pem` Client Certificate for authorized remote UI instances.
 3.  The core API uses `tls.RequireAndVerifyClientCert`, refusing any connection not signed by the local CA.
 
+### Multi-Client Deterministic Slots and Configuration Roles
+
+The suite supports multi-client MLVPN tunneling utilizing a deterministic slot model configured via `/opt/VLX_FrameFlow/etc/peers.yaml` on the server.
+- Each client is assigned an integer slot in `peers.yaml`. This slot deterministically derives the tunnel interface (`mlvpn{slot}`), UDP port (`5080+slot`), and the inner tunnel IP subnet (`10.1.{10+slot}.x`).
+- To enforce routing, peer names defined in `peers.yaml` must be lowercase and DNS-label safe.
+
+The daemon resolves architecture nuances (e.g. AMD64 vs ARM64) automatically. Furthermore, the role configuration (`FRAMEFLOW_ROLE` in settings, empty for Client, `SERVER` for Server) dynamically instructs the daemon on which privilege scoping and systemd management mechanisms (e.g., system vs user) should be utilized.
+
 ### "Build as User, Run as Root"
 
-The suite enforces a strict dichotomy between Client and Server roles regarding execution privilege and systemd architecture:
+The suite enforces a strict dichotomy between Client and Server roles regarding execution privilege and systemd architecture (guided by the `FRAMEFLOW_ROLE` variable):
 
 1.  **Build:** Unprivileged compilation via `build.sh`.
 2.  **Install:** Executing the compiled binary as root triggers `internal/sysutils.InstallBinary()`.
