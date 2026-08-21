@@ -219,17 +219,15 @@ func InstallBinary(isServer bool) error {
 				}
 			}
 
-			if !isServer {
-				// Copy frontend template user settings if it exists
-				frontendTemplate := filepath.Join(searchPath, "frontend.settings.template")
-				frontendTarget := filepath.Join(installConfigDir, "frontend.settings")
-				if _, err := os.Stat(frontendTemplate); err == nil {
-					if _, err := os.Stat(frontendTarget); os.IsNotExist(err) {
-						copyFile(frontendTemplate, frontendTarget, 0644)
-						Info("Copied frontend.settings.template to etc")
-					} else {
-						mergeConfigs(frontendTemplate, frontendTarget)
-					}
+			// Copy frontend template user settings if it exists
+			frontendTemplate := filepath.Join(searchPath, "frontend.settings.template")
+			frontendTarget := filepath.Join(installConfigDir, "frontend.settings")
+			if _, err := os.Stat(frontendTemplate); err == nil {
+				if _, err := os.Stat(frontendTarget); os.IsNotExist(err) {
+					copyFile(frontendTemplate, frontendTarget, 0644)
+					Info("Copied frontend.settings.template to etc")
+				} else {
+					mergeConfigs(frontendTemplate, frontendTarget)
 				}
 			}
 
@@ -249,6 +247,17 @@ func InstallBinary(isServer bool) error {
 					mergeConfigs(mtxConfig, mtxTarget)
 				}
 			}
+
+			// Copy peers.yaml.template to etc/peers.yaml if it exists
+			peersTemplate := filepath.Join(searchPath, "peers.yaml.template")
+			peersTarget := filepath.Join(installConfigDir, "peers.yaml")
+			if _, err := os.Stat(peersTemplate); err == nil {
+				if _, err := os.Stat(peersTarget); os.IsNotExist(err) {
+					copyFile(peersTemplate, peersTarget, 0644)
+					Info("Copied peers.yaml.template to etc")
+				}
+			}
+
 			break
 		}
 	}
