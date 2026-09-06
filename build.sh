@@ -26,18 +26,18 @@ mkdir -p "${BUILD_DIR}"
 
 # Build for AMD64
 echo "Compiling for Linux AMD64..."
-GOOS=linux GOARCH=amd64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/${APP_NAME}_amd64" ./cmd/client || echo "Warning: go command failed, this is just a placeholder build script."
-GOOS=linux GOARCH=amd64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/${APP_SRV_NAME}_amd64" ./cmd/server || echo "Warning: go command failed, this is just a placeholder build script."
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/${APP_NAME}_amd64" ./cmd/client || echo "Warning: go command failed, this is just a placeholder build script."
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/${APP_SRV_NAME}_amd64" ./cmd/server || echo "Warning: go command failed, this is just a placeholder build script."
 
 # Build for ARM64 (e.g. Radxa Rock 5T, Orange Pi 5 Plus)
 echo "Compiling for Linux ARM64..."
-GOOS=linux GOARCH=arm64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/${APP_NAME}_arm64" ./cmd/client || echo "Warning: go command failed, this is just a placeholder build script."
-GOOS=linux GOARCH=arm64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/${APP_SRV_NAME}_arm64" ./cmd/server || echo "Warning: go command failed, this is just a placeholder build script."
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/${APP_NAME}_arm64" ./cmd/client || echo "Warning: go command failed, this is just a placeholder build script."
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/${APP_SRV_NAME}_arm64" ./cmd/server || echo "Warning: go command failed, this is just a placeholder build script."
 
 echo "Compiling frontend for Linux AMD64..."
-GOOS=linux GOARCH=amd64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/vlx_frontend_amd64" ./cmd/frontend || echo "Warning: frontend go command failed."
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/vlx_frontend_amd64" ./cmd/frontend || echo "Warning: frontend go command failed."
 
 echo "Compiling frontend for Linux ARM64..."
-GOOS=linux GOARCH=arm64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/vlx_frontend_arm64" ./cmd/frontend || echo "Warning: frontend go command failed."
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -buildmode=pie -ldflags="${LDFLAGS}" -o "${BUILD_DIR}/vlx_frontend_arm64" ./cmd/frontend || echo "Warning: frontend go command failed."
 
 echo "Build complete! Binaries are located in the '${BUILD_DIR}' directory."
