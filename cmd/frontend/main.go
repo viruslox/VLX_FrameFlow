@@ -101,6 +101,7 @@ func (d *dispatcher) handle(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"use_relay": false})
 
 		case rest == "/ws":
+			fmt.Printf("FRONTEND /ws: Connection=%q Upgrade=%q\n", c.Request.Header.Get("Connection"), c.Request.Header.Get("Upgrade"))
 			c.Request.Header.Set("Authorization", d.backendAuth)
 			c.Request.URL.Path = "/ws"
 			d.proxy.ServeHTTP(c.Writer, c.Request)
@@ -155,6 +156,7 @@ func (d *dispatcher) handle(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"use_relay": true})
 
 	case rest == "/ws":
+			fmt.Printf("FRONTEND /ws: Connection=%q Upgrade=%q\n", c.Request.Header.Get("Connection"), c.Request.Header.Get("Upgrade"))
 		// WebSocket: unauthenticated at the frontend (the ticket is validated on
 		// the SBC); forwarded to the Server relay addressed by name.
 		c.Request.Header.Set("Authorization", d.backendAuth)
