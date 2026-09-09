@@ -91,9 +91,37 @@ type dispatcher struct {
 }
 
 func (d *dispatcher) handle(c *gin.Context) {
+	if !d.cfg.UseRelay {
+		rest := c.Request.URL.Path
+
+		switch {
+		case rest == "/config":
+			c.JSON(http.StatusOK, gin.H{"use_relay": false})
+
+		case rest == "/ws":
+			c.Request.Header.Set("Authorization", d.backendAuth)
+			c.Request.URL.Path = "/ws"
+			d.proxy.ServeHTTP(c.Writer, c.Request)
+
+		case strings.HasPrefix(rest, "/api/"):
+			if !d.requireBrowserAuth(c) {
+				return
+			}
+			c.Request.Header.Set("Authorization", d.backendAuth)
+			d.proxy.ServeHTTP(c.Writer, c.Request)
+
+		default:
+			if !d.requireBrowserAuth(c) {
+				return
+			}
+			ui.ServeSPA(c, rest)
+		}
+		return
+	}
+
 	name, rest := splitClient(c.Request.URL.Path)
 
-	// A client name is mandatory; nothing is served at the unnamed root.
+	// A client name is mandatory in relay mode; nothing is served at the unnamed root.
 	if name == "" {
 		c.String(http.StatusNotFound, "VLX FrameFlow: address a client, e.g. /<client-name>/")
 		return
