@@ -73,7 +73,10 @@ func ResolvePeerClientHost(slot int, fallbackHost string) (string, error) {
 func NewClientWSProxy(host, port string) *httputil.ReverseProxy {
 	target := &url.URL{Scheme: "https", Host: fmt.Sprintf("%s:%s", host, port)}
 	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	proxy.Transport = &http.Transport{
+		TLSNextProto: make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
 	origDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		origDirector(req)

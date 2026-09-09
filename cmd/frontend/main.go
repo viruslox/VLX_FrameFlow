@@ -58,6 +58,7 @@ func main() {
 			log.Fatalf("Failed to load client certificate: %v", err)
 		}
 		proxy.Transport = &http.Transport{
+			TLSNextProto: make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
 			TLSClientConfig: &tls.Config{
 				Certificates:       []tls.Certificate{cert},
 				InsecureSkipVerify: true,
@@ -65,6 +66,7 @@ func main() {
 		}
 	} else {
 		proxy.Transport = &http.Transport{
+			TLSNextProto:    make(map[string]func(authority string, c *tls.Conn) http.RoundTripper),
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 	}
