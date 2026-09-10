@@ -7,7 +7,9 @@ func GetNetworkInterfaces() map[string]NetworkInterfaceStats {
 }
 
 func GetSystemUsage() SystemUsage {
-	return SystemUsage{}
+	return SystemUsage{
+		Temps: make(map[string]float64),
+	}
 }
 
 func GetGPSData() string {

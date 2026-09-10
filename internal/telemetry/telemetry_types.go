@@ -11,9 +11,10 @@ type NetworkInterfaceStats struct {
 }
 
 type SystemUsage struct {
-	CPU  float64 `json:"cpu"`
-	Ram  float64 `json:"ram"`
-	Swap float64 `json:"swap"`
+	CPU   float64            `json:"cpu"`
+	Ram   float64            `json:"ram"`
+	Swap  float64            `json:"swap"`
+	Temps map[string]float64 `json:"temps"`
 }
 
 type GPSData string

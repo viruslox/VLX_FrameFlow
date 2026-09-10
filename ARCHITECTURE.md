@@ -167,7 +167,16 @@ Unprivileged Client CLI commands wrap themselves in `sudo` to invoke hidden inte
 
 ### Server command forwarding
 
-`VLX_FrameFlow_SRV api start` spins up the relay (`<bind_address>:<bind_port>`, default `127.0.0.1:9090`; HTTPS when server certs exist). Requests to `/api/v1/relay/*path` are reconstructed (body, query, headers) and forwarded to the Client API over MLVPN (`https://<relay_client_host>:<relay_client_port>/api<path>`, default `https://10.1.10.2:9090`), with `InsecureSkipVerify: true` — safe because the MLVPN tunnel is encrypted, isolated, and the Client uses self-signed local certs.
+`VLX_FrameFlow_SRV api start` spins up the relay (`<bind_address>:<bind_port>`, default `127.0.0.1:9090`; HTTPS when server certs exist). 
+
+**Single-Client (Legacy):** Requests to `/api/v1/relay/*path` are reconstructed (body, query, headers) and forwarded to the Client API over MLVPN (`https://<relay_client_host>:<relay_client_port>/api<path>`, default `https://10.1.10.2:9090`).
+
+**Multi-Client:** When a peer registry (`peers.yaml`) is present, requests should use `/api/v1/peer/<id>/*path` (where `<id>` is a peer name or slot). The Server intercepts this, looks up the peer's derived `client_tun_ip`, and dynamically forwards the request to `https://<client_tun_ip>:9090/api<path>`.
+
+All relays use `InsecureSkipVerify: true` — safe because the MLVPN tunnel is encrypted, isolated, and the Client uses self-signed local certs.
+
+> [!NOTE]
+> **Firewall Dropping Symptom:** If the Server successfully routes a request to the correct tunnel IP, but the request hangs for ~2 minutes before returning a `502 Bad Gateway`, this indicates a TCP blackhole. It means the client device's firewall (e.g., `ufw`) is silently dropping incoming connections on port `9090` from the MLVPN interface. The client must explicitly allow TCP port 9090 traffic from the server's tunnel IP.
 
 ## Module-specific behaviours
 

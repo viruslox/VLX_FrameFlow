@@ -216,12 +216,33 @@ srt://10.1.10.1:8890?streamid=publish:stream_name:user:pass
 
 Multi-client MLVPN uses a deterministic slot model: each client's integer `slot` derives its interface (`mlvpn{slot}`), UDP port (`5080+slot`), and subnet (`10.1.{10+slot}.x`). Peer names must be lowercase and DNS-label safe.
 
+When `peers.yaml` is present, it overrides the legacy `relay_client_host` fallback in `frameflow.settings`. The server dynamically resolves API relay endpoints (like `/api/v1/peer/<name>/...`) to the correct client tunnel IP.
+
+> [!WARNING]
+> **YAML Syntax:** You must include the `peers:` root element, otherwise the configuration will silently fail to load, resulting in `404 Unknown client` errors in the frontend.
+
 ```yaml
 peers:
-  - name: client01
-    slot: 1
+  - slot: 0
+    name: "peer01"
+    key: "YOUR-SECRET-KEY-0"
+    # client_tun_ip: 10.1.10.2 (automatically derived from slot 0)
+    # port: 5080             (automatically derived from slot 0)
+  
+  - slot: 1
+    name: "peer02"
     key: "YOUR-SECRET-KEY-1"
+    # client_tun_ip: 10.1.11.2 (automatically derived from slot 1)
+    # port: 5081             (automatically derived from slot 1)
 ```
+
+> [!IMPORTANT]
+> **Client Firewall Requirement:** The client device (e.g., `peer02`) **must** allow incoming TCP connections on port `9090` from the server's tunnel IP. If this rule is missing, requests from the frontend will hang and return a `502 Bad Gateway` after a 2-minute timeout (because packets are silently dropped by the client's firewall).
+> 
+> To allow access via UFW on the client device:
+> ```bash
+> sudo ufw allow from 10.1.<10+slot>.1 to any port 9090 proto tcp
+> ```
 
 ### Apache reverse proxy (Frontend)
 

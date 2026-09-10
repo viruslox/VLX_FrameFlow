@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -235,6 +236,62 @@ func GetNetworkInterfaces() map[string]NetworkInterfaceStats {
 	return stats
 }
 
+func getTemperatures() map[string]float64 {
+	raw := make(map[string]float64)
+	files, _ := filepath.Glob("/sys/class/thermal/thermal_zone*")
+	for _, f := range files {
+		tBytes, err1 := os.ReadFile(filepath.Join(f, "type"))
+		vBytes, err2 := os.ReadFile(filepath.Join(f, "temp"))
+		if err1 == nil && err2 == nil {
+			name := strings.TrimSpace(string(tBytes))
+			val, _ := strconv.ParseFloat(strings.TrimSpace(string(vBytes)), 64)
+			raw[name] = val / 1000.0 // kernel temps are in millidegrees Celsius
+		}
+	}
+
+	temps := make(map[string]float64)
+	var maxCPU, maxChip float64
+
+	for k, v := range raw {
+		kl := strings.ToLower(k)
+		if strings.Contains(kl, "cpu") || strings.Contains(kl, "core") {
+			if v > maxCPU {
+				maxCPU = v
+			}
+		} else if strings.Contains(kl, "soc") || strings.Contains(kl, "center") || strings.Contains(kl, "gpu") || strings.Contains(kl, "npu") {
+			if v > maxChip {
+				maxChip = v
+			}
+		} else if strings.Contains(kl, "board") || strings.Contains(kl, "mb") || strings.Contains(kl, "tcrypt") {
+			temps["MB"] = v
+		}
+	}
+
+	if maxCPU > 0 {
+		temps["CPU"] = maxCPU
+	}
+	if maxChip > 0 {
+		temps["Chip"] = maxChip
+	}
+
+	// Fallback for non-RK3588 platforms (e.g., x86_pkg_temp)
+	if len(temps) == 0 {
+		for k, v := range raw {
+			kl := strings.ToLower(k)
+			if strings.Contains(kl, "x86_pkg_temp") || k == "acpitz" {
+				if v > maxCPU {
+					maxCPU = v
+				}
+			}
+		}
+		if maxCPU > 0 {
+			temps["CPU"] = maxCPU
+		}
+	}
+
+	return temps
+}
+
 // GetSystemUsage parses /proc/stat and /proc/meminfo to get CPU, RAM, and Swap usage percentages.
 func GetSystemUsage() SystemUsage {
 	// CPU usage
@@ -318,9 +375,10 @@ func GetSystemUsage() SystemUsage {
 	}
 
 	return SystemUsage{
-		CPU:  cpuUsage,
-		Ram:  ramUsedPct,
-		Swap: swapUsedPct,
+		CPU:   cpuUsage,
+		Ram:   ramUsedPct,
+		Swap:  swapUsedPct,
+		Temps: getTemperatures(),
 	}
 }
 
