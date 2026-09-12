@@ -10,9 +10,9 @@ partition UUID.
 
 ```bash
 KVER=$(uname -r)
-KVER_MAJOR=$(dpkg -l | grep $KVER | awk '{print $3}' | sort -u)
+KVER_MAJOR=$(echo "$KVER" | cut -d. -f1,2)
 BOARD_DTS=rk3588-orangepi-5-plus
-BOARD_DTS=rk3588-rock-5t
+#BOARD_DTS=rk3588-rock-5t
 ESP_UUID=$(lsblk -n -o UUID,FSTYPE | awk '$2 == "vfat" {print $1}')
 ```
 ---
