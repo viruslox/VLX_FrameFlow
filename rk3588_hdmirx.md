@@ -8,11 +8,13 @@ Placeholders: `<KVER>` = `uname -r`, `<KVER_MAJOR>` = source package major
 (e.g. `7.2`), `<BOARD_DTS>` = board dts basename, `<ESP_UUID>` = ESP FAT
 partition UUID.
 
+```bash
 KVER=$(uname -r)
 KVER_MAJOR=$(dpkg -l | grep $KVER | awk '{print $3}' | sort -u)
 BOARD_DTS=rk3588-orangepi-5-plus
 BOARD_DTS=rk3588-rock-5t
 ESP_UUID=$(lsblk -n -o UUID,FSTYPE | awk '$2 == "vfat" {print $1}')
+```
 ---
 
 ## 1. Discover all HDMI-RX-related symbols (video + audio + CEC)
