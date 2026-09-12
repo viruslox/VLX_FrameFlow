@@ -124,7 +124,11 @@ Empty result → wrong dtb is being loaded; go to step 6.
 
 ---
 
-## 6. Boot chain (UEFI + GRUB2)
+## 6. Boot chain
+
+The method to load the right device tree depends heavily on your bootloader environment.
+
+### Case A: UEFI + GRUB2 (e.g., Orange Pi 5 Plus with EDK2)
 
 `GRUB_DEVICETREE` in `/etc/default/grub` is a no-op on Debian's
 `grub-efi-arm64` — no script implements it. Add an explicit loader:
@@ -144,7 +148,7 @@ grep -A3 devicetree /boot/grub/grub.cfg   # confirm syntax + resolved path
 reboot
 ```
 
-Notes:
+Notes for GRUB2:
 - Path in `devicetree` must resolve against the **ESP**, not `/boot` —
   GRUB's default search root is the partition holding `vmlinuz`, which
   is typically a different partition than the ESP holding `dtb/`.
@@ -154,6 +158,27 @@ Notes:
 - If `u-boot-efi-dtb` is installed, it resyncs `/boot/efi/dtb/` from
   `linux-image-*` on every kernel update; confirm the synced dtb still
   contains the node after upgrades.
+
+### Case B: U-Boot with extlinux (e.g., Rock 5T with Radxa U-Boot)
+
+Standard U-Boot environments for Debian typically rely on `/boot/extlinux/extlinux.conf` instead of GRUB. You must ensure the correct DTB is passed to the kernel.
+
+```bash
+# Verify the current extlinux.conf configuration
+cat /boot/extlinux/extlinux.conf
+```
+
+Ensure your default boot label contains a line pointing to the correct device tree directory or file. For example:
+```text
+    # Either pointing to a directory...
+    fdtdir /usr/lib/linux-image-6.x.x-ARCH/
+    
+    # ...or explicitly to the DTB file:
+    fdt /usr/lib/linux-image-6.x.x-ARCH/rockchip/rk3588-rock-5t.dtb
+```
+
+If U-Boot loads an incorrect or default DTB, manually edit `/boot/extlinux/extlinux.conf` to set the `fdt` or `fdtdir` property correctly and `reboot`.
+
 
 ---
 
