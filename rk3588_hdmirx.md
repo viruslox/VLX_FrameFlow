@@ -8,6 +8,11 @@ Placeholders: `<KVER>` = `uname -r`, `<KVER_MAJOR>` = source package major
 (e.g. `7.2`), `<BOARD_DTS>` = board dts basename, `<ESP_UUID>` = ESP FAT
 partition UUID.
 
+KVER=$(uname -r)
+KVER_MAJOR=$(dpkg -l | grep $KVER | awk '{print $3}' | sort -u)
+BOARD_DTS=rk3588-orangepi-5-plus
+BOARD_DTS=rk3588-rock-5t
+ESP_UUID=$(lsblk -n -o UUID,FSTYPE | awk '$2 == "vfat" {print $1}')
 ---
 
 ## 1. Discover all HDMI-RX-related symbols (video + audio + CEC)
@@ -16,7 +21,7 @@ Don't hardcode a symbol list — grep the running config for every match,
 so this stays valid across kernel versions:
 
 ```bash
-grep -iE "hdmirx|snps.*hdmi.*rx" /boot/config-<KVER>
+grep -iE "hdmirx|snps.*hdmi.*rx" /boot/config-$KVER
 ```
 
 Typical hits: `CONFIG_VIDEO_SYNOPSYS_HDMIRX`, `CONFIG_VIDEO_SYNOPSYS_HDMIRX_CEC`,
@@ -39,8 +44,8 @@ grep -riE "hdmirx" drivers/sound/ sound/soc/rockchip/ 2>/dev/null
 `linux-headers-*` ships no `.c` — full source required:
 
 ```bash
-apt install linux-source-<KVER_MAJOR> linux-config-<KVER_MAJOR>
-cd /usr/src && tar xf linux-source-<KVER_MAJOR>.tar.* && cd linux-source-<KVER_MAJOR>
+apt install linux-source-$KVER_MAJOR linux-config-$KVER_MAJOR
+cd /usr/src && tar xf linux-source-$KVER_MAJOR.tar.* && cd linux-source-$KVER_MAJOR
 ```
 
 ---
@@ -48,7 +53,7 @@ cd /usr/src && tar xf linux-source-<KVER_MAJOR>.tar.* && cd linux-source-<KVER_M
 ## 3. Config: enable every matched symbol as module
 
 ```bash
-cp /boot/config-<KVER> .config
+cp /boot/config-$KVER .config
 
 for sym in $(grep -ioE "CONFIG_[A-Z0-9_]*HDMI[A-Z0-9_]*RX[A-Z0-9_]*" .config \
              drivers/media/platform/synopsys/hdmirx/Kconfig \
@@ -68,25 +73,25 @@ make ARCH=arm64 modules_prepare
 
 ## 4. Build — vermagic fix (mandatory)
 
-Debian's `uname -r` (e.g. `<KVER>`) never matches the source tree's own
+Debian's `uname -r` (e.g. `$KVER`) never matches the source tree's own
 `kernel.release` (patch level truncated in package name). Skipping this
 step produces `Exec format error` at `modprobe`.
 
 ```bash
-echo "<KVER>" > include/config/kernel.release
-sed -i "s/#define UTS_RELEASE.*/#define UTS_RELEASE \"<KVER>\"/" include/generated/utsrelease.h
-cp /usr/src/linux-headers-<KVER>/Module.symvers .
+echo "$KVER" > include/config/kernel.release
+sed -i "s/#define UTS_RELEASE.*/#define UTS_RELEASE \"$KVER\"/" include/generated/utsrelease.h
+cp /usr/src/linux-headers-$KVER/Module.symvers .
 
-make ARCH=arm64 KERNELRELEASE=<KVER> M=drivers/media/platform/synopsys/hdmirx modules
+make ARCH=arm64 KERNELRELEASE=$KVER M=drivers/media/platform/synopsys/hdmirx modules
 modinfo drivers/media/platform/synopsys/hdmirx/synopsys-hdmirx.ko | grep vermagic
-# must read exactly: <KVER> SMP preempt mod_unload aarch64
+# must read exactly: $KVER SMP preempt mod_unload aarch64
 
 # if an audio module was enabled, build it too, same pattern:
-make ARCH=arm64 KERNELRELEASE=<KVER> M=sound/soc/rockchip modules   # path may vary by kernel version
+make ARCH=arm64 KERNELRELEASE=$KVER M=sound/soc/rockchip modules   # path may vary by kernel version
 
-sudo make ARCH=arm64 KERNELRELEASE=<KVER> M=drivers/media/platform/synopsys/hdmirx modules_install
-sudo depmod -a <KVER>
-sudo modprobe synopsys_hdmirx
+make ARCH=arm64 KERNELRELEASE=$KVER M=drivers/media/platform/synopsys/hdmirx modules_install
+depmod -a $KVER
+modprobe synopsys_hdmirx
 ```
 
 Out-of-tree, unsigned → kernel taint (harmless). Does not survive
@@ -103,7 +108,7 @@ needed on most boards (exceptions exist, e.g. missing `hpd-gpios` on
 some vendor boards; check first).
 
 ```bash
-dtc -I dtb -O dts /usr/lib/linux-image-<KVER>/rockchip/<BOARD_DTS>.dtb 2>/dev/null | grep -A15 hdmi_receiver
+dtc -I dtb -O dts /usr/lib/linux-image-$KVER/rockchip/$BOARD_DTS.dtb 2>/dev/null | grep -A15 hdmi_receiver
 ```
 
 Verify what's actually loaded at boot, not what's on disk:
@@ -123,13 +128,13 @@ Empty result → wrong dtb is being loaded; go to step 6.
 `grub-efi-arm64` — no script implements it. Add an explicit loader:
 
 ```bash
-blkid <ESP_partition_device>   # get <ESP_UUID>
+blkid <ESP_partition_device>   # get $ESP_UUID
 
 cat > /etc/grub.d/09_devicetree << EOF
 #!/bin/sh
 exec tail -n +3 \$0
-search --no-floppy --fs-uuid --set=dtbroot <ESP_UUID>
-devicetree (\$dtbroot)/dtb/rockchip/<BOARD_DTS>.dtb
+search --no-floppy --fs-uuid --set=dtbroot $ESP_UUID
+devicetree (\$dtbroot)/dtb/rockchip/$BOARD_DTS.dtb
 EOF
 chmod +x /etc/grub.d/09_devicetree
 update-grub
