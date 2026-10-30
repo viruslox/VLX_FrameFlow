@@ -29,7 +29,7 @@ echo "Building version ${GIT_TAG} (${GIT_COMMIT})"
 
 echo "Building frontend assets..."
 if command -v npm >/dev/null 2>&1; then
-  ( cd frontend_app && npm ci && npm run build )
+  ( cd frontend_app && npm ci --no-fund --no-audit && npm run build )
   mkdir -p internal/ui/dist
   rm -rf internal/ui/dist/*
   cp -r frontend_app/dist/* internal/ui/dist/
