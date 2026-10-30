@@ -6,6 +6,7 @@ config/*.conf
 !config/*.example
 
 # Node / Frontend
+node_modules/
 frontend_app/node_modules/
 frontend_app/dist/
 frontend_app/.svelte-kit/

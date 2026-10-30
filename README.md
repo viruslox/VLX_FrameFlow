@@ -153,7 +153,7 @@ All runtime modules run as the dedicated service user (default `frameflow`) via 
 ./vlx_frameflow cameraman <VxAy> <start|stop|status>
 ```
 
-Captures video/audio dynamically via `v4l2-ctl` and `arecord`, then streams over SRT (redirecting UDP to the server tunnel via MLVPN). `VxAy` selects the video index (`x`) and audio index (`y`), e.g. `V0A1`, or `V1A0` for no audio.
+Captures video/audio dynamically via `v4l2-ctl` and `arecord`, then streams over SRT (redirecting UDP to the server tunnel via MLVPN). `VxAy` selects the 1-based video index (`x`) and audio index (`y`), e.g. `V1A1` for the first video + audio device, `V1A0` for video without audio, or `V0A1` for audio-only with a placeholder video canvas.
 
 ### GPS Tracker
 
@@ -175,7 +175,7 @@ The **Server** acts as a transparent reverse proxy, relaying local API requests 
 # Start the SBC cameraman through the relay (correct ecosystem call):
 curl -X POST http://127.0.0.1:9090/api/v1/relay/cameraman/start \
   -H "Content-Type: application/json" \
-  -d '{"device": "V0A1"}'
+  -d '{"device": "V1A1"}'
 
 # Check the SBC MediaMTX status through the relay:
 curl http://127.0.0.1:9090/api/v1/relay/mediamtx/status

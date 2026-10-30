@@ -18,8 +18,8 @@ The URL pattern is `/api/v1/relay/<module>/<action>`.
 
 | Module | Action | Purpose |
 | :--- | :--- | :--- |
-| `cameraman` | `/start` | Starts the camera capture and SRT encoding loop. Accepts JSON payload `{"device":"V0A1"}`. |
-| `cameraman` | `/stop` | Stops camera capture. |
+| `cameraman` | `/start` | Starts the camera capture and SRT encoding loop. Accepts JSON payload `{"device":"V1A1"}` (1-based video/audio index; `V0A1` is audio-only with placeholder video). |
+| `cameraman` | `/stop` | Stops camera capture. Accepts JSON payload `{"slot":"01"}` (or `"00"` for audio-only slot). |
 | `cameraman` | `/status` | Returns the status of the cameraman service. |
 | `cameraman` | `/list-dev` | Returns available V4L2 video devices on the SBC. |
 | `mediamtx` | `/start` | Starts the internal MediaMTX instance (wificam RTMP ingest). |
@@ -53,7 +53,7 @@ You can trigger any of these endpoints using ChatBridge's `webhook` transport in
       "method": "POST",
       "url": "http://127.0.0.1:9090/api/v1/relay/cameraman/start",
       "payload": {
-        "device": "V0A1"
+        "device": "V1A1"
       }
     }
   ]

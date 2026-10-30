@@ -4,13 +4,13 @@
   import { parseServiceStatus } from "./utils.js";
 
   const ansiConvert = new AnsiToHtml({ escapeXML: true });
-  let consoleOutput = "";
+  let consoleOutput = $state("");
 
   // In relay mode (frontend fronting a Server/VM) every module call must go
   // through api/v1/relay/... to reach the remote SBC. In direct mode (frontend
   // on the SBC itself) calls hit the local api/... routes. The prefix is chosen
   // at runtime from the backend's /config, so the same build serves both modes.
-  let apiBase = "api";
+  let apiBase = $state("api");
 
   function ep(path) {
     // path is the module path WITHOUT the leading "api/", e.g. "frameflow/client/status"
@@ -26,16 +26,16 @@
     { id: 'cameraman', name: "Cameraman", paths: { start: "cameraman/start", stop: "cameraman/stop", status: "cameraman/status", listDev: "cameraman/list-dev" } },
   ];
 
-  let serviceStates = {};
-  let rawStates = {};
+  let serviceStates = $state({});
+  let rawStates = $state({});
   let pollingInterval;
 
-  let videoIds = [];
-  let audioIds = [];
-  let selectedVideo = "";      // "" = None (V0)
-  let selectedAudio = "auto";  // "auto" = bare V<n> sysfs pairing; "" = None (A0)
-  let slotHi = "";
-  let slotLo = "";
+  let videoIds = $state([]);
+  let audioIds = $state([]);
+  let selectedVideo = $state("");      // "" = None (V0)
+  let selectedAudio = $state("auto");  // "auto" = bare V<n> sysfs pairing; "" = None (A0)
+  let slotHi = $state("");
+  let slotLo = $state("");
 
   // Build the VxAy hardware selector from the two pickers. Returns null for
   // invalid combinations (nothing real, or Auto audio without a video source).
@@ -54,8 +54,8 @@
     e.target.value = d;
   }
 
-  $: selectedCameraId = buildCameraId(selectedVideo, selectedAudio);
-  $: slotStr = `${slotHi}${slotLo}`;
+  let selectedCameraId = $derived(buildCameraId(selectedVideo, selectedAudio));
+  let slotStr = $derived(`${slotHi}${slotLo}`);
 
   const loadMode = async () => {
     // Decide direct vs relay base from the frontend's own /config. In relay
@@ -309,7 +309,7 @@
           <h3>{mod.name}</h3>
           <div style="display: flex; align-items: center; gap: 0.5rem;">
             {#if mod.id === 'cameraman'}
-              <button style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" on:click={logDevList}>Devlist</button>
+              <button style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" onclick={logDevList}>Devlist</button>
             {/if}
             {#if serviceStates[mod.id]}
               <div class="status-badge" style="background-color: {serviceStates[mod.id].color === 'gray' ? '#555' : serviceStates[mod.id].color};" title="{serviceStates[mod.id].label}"></div>
@@ -349,9 +349,9 @@
                 Path NN
                 <span style="display:flex; gap:0.2rem;">
                   <input type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" placeholder="0"
-                    style="width:2ch; text-align:center;" value={slotHi} on:input={(e) => sanitizeDigit(e, 'hi')} />
+                    style="width:2ch; text-align:center;" value={slotHi} oninput={(e) => sanitizeDigit(e, 'hi')} />
                   <input type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" placeholder="0"
-                    style="width:2ch; text-align:center;" value={slotLo} on:input={(e) => sanitizeDigit(e, 'lo')} />
+                    style="width:2ch; text-align:center;" value={slotLo} oninput={(e) => sanitizeDigit(e, 'lo')} />
                 </span>
               </label>
             </div>
@@ -359,16 +359,16 @@
 
           {#if mod.id === 'cameraman'}
             <button disabled={!selectedCameraId} title={selectedCameraId ? '' : 'Pick a video and/or audio source'}
-              on:click={() => execCommand(mod.name, ep(mod.paths.start), 'Start', { device: selectedCameraId, slot: slotStr })}>Start</button>
-            <button disabled={!slotStr} title={slotStr ? '' : 'Enter the NN of the slot to stop'} on:click={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', { slot: slotStr })}>Stop</button>
-            <button on:click={() => execCommand(mod.name, ep(mod.paths.status), 'Status', slotStr ? { slot: slotStr } : null)}>Status</button>
+              onclick={() => execCommand(mod.name, ep(mod.paths.start), 'Start', { device: selectedCameraId, slot: slotStr })}>Start</button>
+            <button disabled={!slotStr} title={slotStr ? '' : 'Enter the NN of the slot to stop'} onclick={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', { slot: slotStr })}>Stop</button>
+            <button onclick={() => execCommand(mod.name, ep(mod.paths.status), 'Status', slotStr ? { slot: slotStr } : null)}>Status</button>
           {:else if mod.id !== 'bonding'}
-            <button on:click={() => execCommand(mod.name, ep(mod.paths.start), 'Start', null)}>Start</button>
-            <button on:click={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', null)}>Stop</button>
-            <button on:click={() => execCommand(mod.name, ep(mod.paths.status), 'Status', null)}>Status</button>
+            <button onclick={() => execCommand(mod.name, ep(mod.paths.start), 'Start', null)}>Start</button>
+            <button onclick={() => execCommand(mod.name, ep(mod.paths.stop), 'Stop', null)}>Stop</button>
+            <button onclick={() => execCommand(mod.name, ep(mod.paths.status), 'Status', null)}>Status</button>
           {/if}
           {#if mod.paths.reset}
-            <button on:click={() => execCommand(mod.name, ep(mod.paths.reset), 'Reset')}>Reset</button>
+            <button onclick={() => execCommand(mod.name, ep(mod.paths.reset), 'Reset')}>Reset</button>
           {/if}
         </div>
       </div>
@@ -377,7 +377,7 @@
 
   <div class="logs-header">
     <h2>System Logs</h2>
-    <button class="clear-btn" on:click={clearConsole}>Clear</button>
+    <button class="clear-btn" onclick={clearConsole}>Clear</button>
   </div>
   <div class="console-box">
     {@html consoleOutput}

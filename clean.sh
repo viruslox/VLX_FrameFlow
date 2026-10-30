@@ -3,14 +3,16 @@ set -e
 
 echo "Cleaning FrameFlow build artifacts and caches..."
 
-# Remove main build directories
+# Remove main build directories and stray binaries
 rm -rf build/
 rm -rf bin/
+rm -f frontend
 
 # Remove frontend artifacts
 rm -rf frontend_app/node_modules/
 rm -rf frontend_app/dist/
 rm -rf frontend_app/.svelte-kit/
+rm -rf node_modules/
 rm -rf internal/ui/dist/
 
 # Clean common IDE / temporary files

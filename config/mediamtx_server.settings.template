@@ -27,9 +27,9 @@ authInternalUsers:
       - '10.1.10.0/24'
     permissions:
       - action: publish
-        path: ~^(wificam|cameraman)
+        path: ~^(wificam|cameraman|ChatBridge)
       - action: read
-        path: ~^(wificam|cameraman)
+        path: ~^(wificam|cameraman|ChatBridge)
 
   - user: any
     pass:
@@ -92,3 +92,4 @@ paths:
   # by maintaining an ffmpeg -stream_loop on an /offline path (not shown here) during dropouts.
   ~^wificam:
   ~^cameraman:
+  ~^ChatBridge:

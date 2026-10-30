@@ -1,5 +1,5 @@
 <script>
-  export let usage = { cpu: 0, ram: 0, swap: 0, temps: {} };
+  let { usage = { cpu: 0, ram: 0, swap: 0, temps: {} } } = $props();
 </script>
 
 <div class="card">

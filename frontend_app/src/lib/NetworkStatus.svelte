@@ -1,13 +1,15 @@
 <script>
   import { formatBytes } from "./utils.js";
 
-  export let interfaces = {};
+  let { interfaces = {} } = $props();
 
-  $: sortedInterfaces = Object.entries(interfaces).sort(([a], [b]) => {
-    if (a === "lo") return -1;
-    if (b === "lo") return 1;
-    return a.localeCompare(b);
-  });
+  let sortedInterfaces = $derived(
+    Object.entries(interfaces).sort(([a], [b]) => {
+      if (a === "lo") return -1;
+      if (b === "lo") return 1;
+      return a.localeCompare(b);
+    })
+  );
 </script>
 
 <div class="card">
