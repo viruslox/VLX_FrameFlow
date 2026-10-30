@@ -98,8 +98,8 @@ FrameFlow enforces a **"Build as User, Run as Root"** workflow.
 
 ### Prerequisites & Target Hardware
 
-- **Recommended Field Unit Hardware:** **Rockchip RK3588 / RK3588S** boards — specifically **Orange Pi 5 Plus** and **Radxa Rock 5T**. The RK3588 platform provides native hardware HDMI-RX (`synopsys_hdmirx`, see **[rk3588_hdmirx.md](rk3588_hdmirx.md)**), high-speed PCIe/NVMe storage, 8-core ARM64 throughput for concurrent V4L2/FFmpeg encoding and dual-protocol bonding, and clean, standard Linux boot chains (**UEFI + GRUB2** or **U-Boot `extlinux`**).
-- **Operating System:** A fresh, minimal **Debian** installation on both the RK3588 SBC (UEFI+GRUB2 or U-Boot `extlinux`) and the VPS.
+- **Recommended Field Unit Hardware:** **Rockchip RK3588 / RK3588S** boards — specifically **Orange Pi 5 Plus** and **Radxa Rock 5T**. The RK3588 platform provides native hardware HDMI-RX (`synopsys_hdmirx`, see **[rk3588_hdmirx.md](rk3588_hdmirx.md)**), high-speed PCIe/NVMe storage, and 8-core ARM64 throughput for concurrent V4L2/FFmpeg encoding and dual-protocol bonding.
+- **Recommended Firmware & Boot Stack:** **[edk2-rk3588](https://github.com/edk2-porting/edk2-rk3588)** UEFI firmware (using `orangepi-5-plus_UEFI` on Orange Pi 5 Plus, and `rock-5bplus_UEFI` on Radxa Rock 5T paired with mainline `rk3588-rock-5t.dtb`) booting **vanilla Debian `arm64`** via **GRUB2** (or U-Boot `extlinux`).
 
 ### Step 1 — Clone and build (as a normal user)
 
