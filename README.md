@@ -1,15 +1,15 @@
 # VLX FrameFlow
 
 > **Part of the [VLX Stream Flow](#the-vlx-stream-flow-ecosystem) ecosystem — the Edge Acquisition & Transport tier.**
-> SBC-based high-availability bonding router, multi-camera SRT encoder, and GPS/telemetry source, paired with a lightweight VPS relay node.
+> Rockchip RK3588 SBC-based high-availability bonding router, multi-camera SRT encoder, and GPS/telemetry source, paired with a lightweight VPS relay node.
 
-VLX FrameFlow is a modular Go suite that turns Debian-based **Single Board Computers (SBCs)** and VPS instances into:
+VLX FrameFlow is a modular Go suite that turns Debian-based **Single Board Computers (SBCs)** — optimized for the **Rockchip RK3588** family (such as **Orange Pi 5 Plus** and **Radxa Rock 5T**) — and VPS instances into:
 
 - **High-availability bonding routers** (dual-protocol: MLVPN for UDP, MPTCP + Shadowsocks for TCP).
-- **Multi-camera streaming encoders** (V4L2/FFmpeg → SRT).
+- **Multi-camera streaming encoders** (V4L2/HDMI-RX/FFmpeg → SRT).
 - **Real-time GPS / telemetry trackers.**
 
-For the full system design, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+For the full system design, see **[ARCHITECTURE.md](ARCHITECTURE.md)**. For enabling native RK3588 HDMI-RX capture on mainline Debian, see **[rk3588_hdmirx.md](rk3588_hdmirx.md)**.
 
 ---
 
@@ -19,7 +19,7 @@ VLX FrameFlow is one of three cooperating services in the **VLX Stream Flow** ec
 
 | Project | Tier | Responsibility | |
 | :--- | :--- | :--- | :--- |
-| **[VLX FrameFlow](https://github.com/viruslox/VLX_FrameFlow)** | Edge & Transport | Bonded uplink (MLVPN + MPTCP), SBC multi-camera SRT encode, GPS telemetry, VPS relay | **← this repository** |
+| **[VLX FrameFlow](https://github.com/viruslox/VLX_FrameFlow)** | Edge & Transport | Bonded uplink (MLVPN + MPTCP), RK3588 SBC multi-camera SRT encode, GPS telemetry, VPS relay | **← this repository** |
 | **[VLX VisionBridge](https://github.com/viruslox/VLX_VisionBridge)** | Composition | Headless Chromium-DOM scene compositor + GStreamer capture → MediaMTX restream | |
 | **[VLX ChatBridge](https://github.com/viruslox/VLX_ChatBridge)** | Control & Engagement | Twitch/YouTube events, Discord audio gateway, overlays, and the ecosystem command router | |
 
@@ -96,9 +96,10 @@ The backend API is built on **Gin** (`github.com/gin-gonic/gin`) and serves a RE
 
 FrameFlow enforces a **"Build as User, Run as Root"** workflow.
 
-### Prerequisites
+### Prerequisites & Target Hardware
 
-- A fresh **Debian-based OS** (e.g. Armbian on the SBC, Debian on the VPS).
+- **Recommended Field Unit Hardware:** **Rockchip RK3588 / RK3588S** boards — specifically **Orange Pi 5 Plus** and **Radxa Rock 5T**. The RK3588 platform provides native hardware HDMI-RX (`synopsys_hdmirx`, see **[rk3588_hdmirx.md](rk3588_hdmirx.md)**), high-speed PCIe/NVMe storage, 8-core ARM64 throughput for concurrent V4L2/FFmpeg encoding and dual-protocol bonding, and clean, standard Linux boot chains (**UEFI + GRUB2** or **U-Boot `extlinux`**).
+- **Operating System:** A fresh, minimal **Debian** installation on both the RK3588 SBC (UEFI+GRUB2 or U-Boot `extlinux`) and the VPS.
 
 ### Step 1 — Clone and build (as a normal user)
 

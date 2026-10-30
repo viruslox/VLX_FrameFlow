@@ -175,15 +175,9 @@ func PrepareMounts(targetDev string, skipHome bool, mnt string) error {
 	if err := os.MkdirAll(fmt.Sprintf("%s/boot/efi", mnt), 0755); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(fmt.Sprintf("%s/boot/firmware", mnt), 0755); err != nil {
-		return err
-	}
 	if _, err := RunCommand(1*time.Minute, "mount", fmt.Sprintf("%sp%d", targetDev, PartNumEfi), fmt.Sprintf("%s/boot/efi", mnt)); err != nil {
 		return err
 	}
-
-	// Some distros use /boot/firmware for EFI partition too. Optional, so ignore error.
-	RunCommand(1*time.Minute, "mount", fmt.Sprintf("%sp%d", targetDev, PartNumEfi), fmt.Sprintf("%s/boot/firmware", mnt))
 
 	if !skipHome {
 		if err := os.MkdirAll(fmt.Sprintf("%s/home", mnt), 0755); err != nil {

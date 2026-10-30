@@ -13,7 +13,7 @@ VLX Stream Flow is a self-hosted, end-to-end broadcasting stack composed of thre
 
 | Project | Tier | Responsibility | |
 | :--- | :--- | :--- | :--- |
-| **VLX FrameFlow** | Edge & Transport | Bonded uplink (MLVPN + MPTCP), SBC multi-camera SRT encode, GPS telemetry, VPS relay | **← this repository** |
+| **VLX FrameFlow** | Edge & Transport | Bonded uplink (MLVPN + MPTCP), RK3588 SBC multi-camera SRT encode, GPS telemetry, VPS relay | **← this repository** |
 | **VLX VisionBridge** | Composition | Headless Chromium-DOM scene compositor + GStreamer capture → MediaMTX restream | |
 | **VLX ChatBridge** | Control & Engagement | Twitch/YouTube events, Discord audio gateway, overlays, and the ecosystem command router | |
 
@@ -130,7 +130,7 @@ SBC cameras → FrameFlow Client FFmpeg **SRT (bonded, MLVPN)** → FrameFlow Se
 
 ## Binary components
 
-1. **`VLX_FrameFlow` (Client)** — SBC-only (e.g. Orange Pi 5 Plus, Radxa Rock 5T). Captures video via V4L2, manages `hostapd`/`networkd`, gathers GPS, and serves the mTLS-protected API.
+1. **`VLX_FrameFlow` (Client)** — SBC-only, optimized for the **Rockchip RK3588** family (**Orange Pi 5 Plus**, **Radxa Rock 5T**) running standard mainline Debian (UEFI+GRUB2 or U-Boot `extlinux`). Captures video via V4L2 / native RK3588 HDMI-RX (see [`rk3588_hdmirx.md`](rk3588_hdmirx.md)), manages `hostapd`/`networkd`, gathers GPS, and serves the mTLS-protected API.
 2. **`VLX_FrameFlow_SRV` (Server)** — VPS-only. Relays traffic, receives bonded connections, enforces UFW rules, and exposes the command relay.
 3. **`vlx_frontend` (UI)** — Standalone web server embedding a pre-built Svelte SPA (`//go:embed`). Uses parallel REST polling, semantic systemd-state parsing, CSS-grid layout, and `ansi-to-html` consoles.
 
