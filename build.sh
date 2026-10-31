@@ -6,7 +6,7 @@
 
 set -e
 
-if [ "$EUID" -eq 0 ]; then
+if [ "$EUID" -eq 0 ] && [ "$CI" != "true" ]; then
     echo "Error: Please do not run this build script as root."
     exit 1
 fi
